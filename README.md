@@ -11,15 +11,25 @@ It can playback quite some Sega Genesis games. Performance (especially sound out
 
 ## Building
 
-Since this is intended to be built with the *Arduino* IDE building is as simple as clicking on the "upload" button. However you will need to install *Earle Philhower's* *Raspberry Pi Pico Arduino core* (no further dependencies are involve).
+Since this is intended to be built with the *Arduino* IDE building is as simple as clicking on the "upload" button. However you will need to install *Earle Philhower's* *Raspberry Pi Pico Arduino core* (no further dependencies are involved).
 
 ## Compiler switches
 
-#define DEBUG_DISPLAY
-#define OVERCLOCK
-#define ROM_HEADER_FILE
-//#define RUN_Z80_AFTER_MAINLOOP
+`#define DEBUG_DISPLAY`
 
+Display FPS counter in the top right corner.
+
+`#define OVERCLOCK`
+
+Enable overclocking.
+
+`#define ROM_HEADER_FILE`
+
+If defined, you need to supply the ROM as header file (see romconv_hex in this repo for details). This way, there is no need to manually upload a ROM using `picotool`. However you need to reflash the whole sketch every time you want to change the ROM. So this is considered for development/debug purposes only.
+
+`#define RUN_Z80_AFTER_MAINLOOP`
+
+Defines at what place the Z80 CPU runs. Since the sound chips are not emulated cycle accurate, the position where the Z80 CPU runs matters. E.g. `RUN_Z80_AFTER_MAINLOOP` is ok for "Lost Vikings" but it is not for "Sonic"... You may tinker a little with this one.
 
 ## Playing games
 
@@ -40,13 +50,13 @@ I found some bugs but did not have the time to fix them. There are random issues
 
 Game states cannot be saved/loaded - even tough *bhzxx* provided all the infrastructure. The reason is I just didn't have the time to implement this. (Contributors welcome!)
 
-Moreover, the RP2040 is not powerful enough to emulate all the *Mega Drive* hardware with sufficient performance. Therefore, I had to do some "tricks" in order to improve the execution performance:
+Moreover, the RP2040 is not powerful enough to emulate all the *Mega Drive* hardware with sufficient performance. Therefore, I had to do some "tweaks" in order to improve the execution performance:
 
 - overclocking the RP2040 approx. by a factor of 2 - *Pimoroni* does this by default with their *Picosystem* so this can't be too bad, right?!
 
 - reducing the sampling rate in both the SN76489 as well as the YM2612 sound chip by a factor of 2.
 
-- making the sound generation **line** or **frame** accurate (instead of **cycle** accurate). This causes the Z80 and the sound chips to get out of sync - and in many games this leads to flaws in the sound output (e.g. Sonic I: No "Sega" voice at the beginning and many more). However, this increases the performance as much as 25 fps and I do not see a way around this other than having no sound at all.
+- making the sound generation **line** or **frame** accurate (instead of **cycle** accurate). This causes the Z80 and the sound chips to get out of sync - and in many games this leads to flaws in the sound output (e.g. Sonic I: No "Sega" voice at the beginning and many more). However, this increases the performance by as much as 25 fps and I do not see a way around this other than having no sound at all.
 
 - distributing the load to both cores. However RAM/ROM bandwidth becomes an issues and cores often stall waiting for the other core to finish access to the memory.
 
