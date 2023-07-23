@@ -29,7 +29,7 @@ If defined, you need to supply the ROM as header file (see romconv_hex in this r
 
 `#define RUN_Z80_AFTER_MAINLOOP`
 
-Defines at what place the Z80 CPU runs. Since the sound chips are not emulated cycle accurate, the position where the Z80 CPU runs matters. E.g. `RUN_Z80_AFTER_MAINLOOP` is ok for "Lost Vikings" but it is not for "Sonic"... You may tinker a little with this one.
+Defines at what place în the code the Z80 CPU runs. Since the sound chips are not emulated cycle accurate, the position where the Z80 CPU runs matters. E.g. `RUN_Z80_AFTER_MAINLOOP` is ok for "Lost Vikings" but it is not for "Sonic"... You may tinker a little with this one.
 
 ## Playing games
 
