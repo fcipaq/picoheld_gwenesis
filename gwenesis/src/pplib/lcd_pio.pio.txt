@@ -1,0 +1,18 @@
+; 8 bit parallel data transmission to LCD
+
+.program lcd_output
+
+.side_set 1 opt
+
+    .wrap_target
+public tx16:
+    out    pins, 8         side 0   ; OSR is auto pulled, shift 8 bits from OSR, WR set to LOW
+    jmp    tx16            side 1   ; repeat, WR set to HIGH
+public tx8:
+    out    pins, 32        side 0   ; OSR is auto pulled, shift 32 bits from OSR, writing only the 8 LSB (?) to pins
+    out    null, 24        side 1   ; discard the remaining 24 bits (only 8 bits are valid, the rest ist just filled with 0s)
+    .wrap
+
+% c-sdk {
+
+%}
