@@ -64,6 +64,8 @@ Moreover, the RP2040 is not powerful enough to emulate all the *Mega Drive* hard
 
 Feel free to report bugs/open issues and I will **try** to come up with a fix. Again: Contributors welcome.
 
+As the framerate is below 60 fps and varies over time, the sound output has to adapt to the current framerate. The pitch will be leveled up at high framerate and leveled down at lower ones so sound output might get audibly distorted (especially music). The sound output system will *try* to keep up with the video pace.
+
 ## Running without the *Pico Held*
 
 Of course you can run this on basically any RP2040. If you have a ILI9341 LCD with parallel connection attached you might not even need to alter the code at all.
