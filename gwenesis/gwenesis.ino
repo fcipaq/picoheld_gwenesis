@@ -215,13 +215,14 @@ int main() {
   }
   ROM_METADATA = (const unsigned char*) rom_addr;
 #else
-  ROM_METADATA = (const unsigned char*) 0x100c3500;  // fixed offset: 800 KB application
+  ROM_METADATA = (const unsigned char*) 0x100e1000;  // fixed offset: 800 KB application
 #endif
 
   ROM_DATA = ROM_METADATA + FLASH_SECTOR_SIZE;  // header is the size of one erase block (FLASH_SECTOR_SIZE)
 
   /* setup graphics output */
   unsigned short* screen = glcdGetBuffer(320, 1);
+  assert(screen);
 
   gwenesis_vdp_set_buffer(&screen[BUF_HEADER_SIZE]);
 
@@ -415,13 +416,15 @@ int main() {
     }
 
     // Frame rate limiter - in case we ever might be too fast
-    #define FRAME_AVG 3   
-    frame_cnt++;
-    if (frame_cnt == FRAME_AVG) {
-      while (micros() - frame_timer_start < 16667 * FRAME_AVG);  // 60 Hz
-      frame_timer_start = micros();
-      frame_cnt = 0;
-    }
+    #if 1
+      #define FRAME_AVG 3   
+      frame_cnt++;
+      if (frame_cnt == FRAME_AVG) {
+        while (micros() - frame_timer_start < 16667 * FRAME_AVG);  // 60 Hz
+        frame_timer_start = micros();
+        frame_cnt = 0;
+      }
+    #endif
 
   }  // end of emulator loop
 }

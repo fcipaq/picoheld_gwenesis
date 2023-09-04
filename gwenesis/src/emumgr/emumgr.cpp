@@ -281,10 +281,15 @@ int selection_menu(const char** menu, int menu_items, int sel_delay, int cyclic,
   int debounce = 1;
   uint16_t color = 0;
   int8_t selected_item = preselect;
+  
+  glcdColor_t empty_line[MENU_BUFFER_WIDTH];
+
+  for (int h = 0; h < MENU_BUFFER_WIDTH; h++)
+    empty_line[h] = color_bkg;
 
   glcdBuffer_t* scr_buf = glcdGetBuffer(MENU_BUFFER_WIDTH, MENU_BUFFER_HEIGHT);
-
   assert(scr_buf);
+  glcdFillRect(0, 0, MENU_BUFFER_WIDTH, MENU_BUFFER_HEIGHT, color_bkg, scr_buf);
 
   while (1) {
 
@@ -304,18 +309,15 @@ int selection_menu(const char** menu, int menu_items, int sel_delay, int cyclic,
 
       glcdSendBufferWord(&scr_buf[BUF_HEADER_SIZE], MENU_BUFFER_WIDTH * MENU_BUFFER_HEIGHT);
 
-      glcdFillRect(0, 0, MENU_BUFFER_WIDTH, MENU_BUFFER_HEIGHT, color_bkg, scr_buf);
-
-
       int a = h == 0 ? 15 : 5;
 
       for (int j = 0; j < a; j++) {
-        glcdSendBufferWord(&scr_buf[BUF_HEADER_SIZE], 320);
+        glcdSendBufferWord(empty_line, MENU_BUFFER_WIDTH);
       }
     }
 
     for (int h = 0; h < 240 - menu_items * (MENU_BUFFER_HEIGHT + 5) - 10; h++)
-      glcdSendBufferWord(&scr_buf[BUF_HEADER_SIZE], 320);
+      glcdSendBufferWord(empty_line, MENU_BUFFER_WIDTH);
 
     uint16_t dpad = checkDPad();
     uint16_t bts = checkButtons();
@@ -566,7 +568,7 @@ int load_rom() {
   rom_file_list[0] = (char*)rom_file_list_header;
 
   for (int i = 1; i < NUM_ROM_FILE_LIST; i++) {
-    rom_file_list[i] = (char*)malloc(ROM_FILE_LIST_NAME_LENGTH + 1);
+    rom_file_list[i] = (char*) malloc(ROM_FILE_LIST_NAME_LENGTH + 1);
     assert(rom_file_list[i]);
   }
 
