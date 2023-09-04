@@ -36,6 +36,7 @@ __license__ = "GPLv3"
 #include <assert.h>
 
 void gwenesis_save_state() {
+  /* DO NOT CHANGE ORDER - NEEDS TO BE SAME AS IN LOAD */
   gwenesis_m68k_save_state();
   gwenesis_io_save_state();
   gwenesis_bus_save_state();
@@ -48,6 +49,7 @@ void gwenesis_save_state() {
 }
 
 void gwenesis_load_state() {
+  /* DO NOT CHANGE ORDER - NEEDS TO BE SAME AS IN SAVE */
   gwenesis_m68k_load_state();
   gwenesis_io_load_state();
   gwenesis_bus_load_state();

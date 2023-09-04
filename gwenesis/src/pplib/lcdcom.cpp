@@ -492,7 +492,7 @@ void glcdSendBufferWord(uint16_t *buf, uint32_t buffersize) {
 }
 
 void glcdBacklight(byte level) {
-  backlightpwm->setPWM(LCD_PIN_BL_PWM, 190, level);
+  backlightpwm->setPWM(LCD_PIN_BL_PWM, 1000000, level);
 }
 
 void glcdInitGraphics()

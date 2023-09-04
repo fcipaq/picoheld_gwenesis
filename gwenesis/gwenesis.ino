@@ -27,6 +27,7 @@ __license__ = "GPLv3"
 
 #include "pico/stdlib.h"  // overclock
 #include "hardware/vreg.h"
+#include "hardware/flash.h"
 
 extern "C" {
 /* Gwenesis Emulator */
@@ -46,23 +47,21 @@ extern "C" {
 #include "src/pplib/buttons.h"
 #include "src/pplib/fonts.h"
 #include "src/pplib/fonts/f13x16.h"
+#include "src/pplib/fonts/pixelmix_14_16.h"
+
+#include "src/emumgr/emumgr.h"
 
 /* ---- compiler switches ---- */
-#define DEBUG_DISPLAY
 #define OVERCLOCK
-//#define ROM_HEADER_FILE
 //#define RUN_Z80_AFTER_MAINLOOP
-
-/* ---- ROM header file ---- */
-#ifdef ROM_HEADER_FILE
-//#include "rom_vdptest_be.h" // Test ROM by Tristan Seifert
-#endif
 
 unsigned short empty_line[320];
 
 #pragma GCC optimize("Ofast")
 
 #define ENABLE_DEBUG_OPTIONS 0
+
+extern char __flash_binary_end;
 
 /* ---- sound ---- */
 // 1: generate sound every line, 0: generate sound every frame
@@ -73,11 +72,10 @@ volatile int snd_speed_div = 9;
 uint32_t snd_speed_fract_tmp = 0;
 uint32_t snd_speed_div_tmp = 9;
 
-int snd_output_volume = 3;  // 2: old prototype, 5: new prototype
+int snd_output_volume = 4;  // 2: old prototype, 4: new prototype
 
-volatile uint8_t soll_snd = 1;
-
-uint8_t audio_enabled = 1;
+volatile uint8_t soll_snd = 0;
+uint8_t audio_enabled = 0;
 
 /* shared variables with gwenesis_sn76589 */
 int16_t gwenesis_sn76489_buffer[GWENESIS_AUDIO_BUFFER_LENGTH_PAL * 2];  // 888 = NTSC, PAL = 1056 (too big) //GWENESIS_AUDIO_BUFFER_LENGTH_PAL];
@@ -99,6 +97,8 @@ unsigned int scan_line;
 
 volatile uint8_t framedrop_cnt = 0;
 
+uint8_t enable_debug_display = 0;
+
 /* ---- input ---- */
 /* Configurable keys mapping for A,B and C */
 extern unsigned short button_state[3];
@@ -106,12 +106,14 @@ extern unsigned short button_state[3];
 #define NB_OF_COMBO 6
 
 uint32_t longpress_s_timer = 0;
-uint8_t toggle_s = 0;
+uint8_t evoke_menu = 0;
 
 /* ---- multi core sync ---- */
 mutex_t core1_busy;
 
 /* ======================= implementation ======================= */
+
+/* ----------------------- emulator ---------------------- */
 
 /* callback used by the emulator to capture keys */
 void gwenesis_io_get_buttons() {
@@ -121,30 +123,12 @@ void gwenesis_io_get_buttons() {
 
   button_state[0] = ((dpad & DPAD_LEFT) != 0) << PAD_LEFT | ((dpad & DPAD_RIGHT) != 0) << PAD_RIGHT | ((dpad & DPAD_UP) != 0) << PAD_UP | ((dpad & DPAD_DOWN) != 0) << PAD_DOWN;
 
+  /* Short press all three buttons to trigger a start button event */
   if (((buts & BUTTON_1) != 0) && ((buts & BUTTON_2) != 0) && ((buts & BUTTON_3) != 0)) {
     button_state[0] |= 1 << PAD_S;
   } else {
     button_state[0] |=
-      //    ((buts & BUTTON_YELLOW) != 0) << PAD_S |
-      ((buts & BUTTON_RED) != 0) << PAD_A | ((buts & BUTTON_BLUE) != 0) << PAD_B | ((buts & BUTTON_GREEN) != 0) << PAD_C;
-  }
-
-  /* Short press all three buttons to trigger a start button event */
-  /* Long press all three buttons to to toggle sound output */
-  if ((button_state[0] & (1 << PAD_S)) != 0) {
-    if (toggle_s == 0) {
-      toggle_s = 1;
-      longpress_s_timer = millis();
-    }
-  } else {
-    if (toggle_s == 1) {
-      toggle_s = 0;
-      if (millis() - longpress_s_timer > 2000) {
-        soll_snd++;
-        if (soll_snd == 2)
-          soll_snd = 0;
-      }
-    }
+      ((buts & BUTTON_3) != 0) << PAD_A | ((buts & BUTTON_2) != 0) << PAD_B | ((buts & BUTTON_1) != 0) << PAD_C;
   }
 
   button_state[0] = ~button_state[0];
@@ -159,23 +143,6 @@ static void gwenesis_system_init() {
   memset(gwenesis_ym2612_buffer, 0, sizeof(gwenesis_ym2612_buffer));
 }
 
-/*
-// TODO: reimplement save/load state
-
-static bool gwenesis_system_SaveState(char *pathName) {
-  int size = 0;
-  printf("Saving state...\n");
-  size = saveGwenesisState((unsigned char *)ACTIVE_FILE->save_address,ACTIVE_FILE->save_size);
-  printf("Saved state size:%d\n", size);
-  return true;
-}
-
-static bool gwenesis_system_LoadState(char *pathName) {
-  printf("Loading state...\n");
-  return loadGwenesisState((unsigned char *)ACTIVE_FILE->save_address);
-}
-*/
-
 void makeGraphics() {
   while (1) {
     mutex_enter_blocking(&core1_busy);
@@ -185,7 +152,7 @@ void makeGraphics() {
 
     if (!framedrop_cnt) {
       /* render scan_line */
-      gwenesis_vdp_render_line(scan_line); 
+      gwenesis_vdp_render_line(scan_line);
     }
 
     if (system_clock_tmp == 0 && audio_enabled) {
@@ -195,8 +162,7 @@ void makeGraphics() {
       uint8_t snd_buf[ym2612_index * GWENESIS_AUDIO_SAMPLING_DIVISOR * 2];
 
       for (int h = 0; h < ym2612_index * GWENESIS_AUDIO_SAMPLING_DIVISOR * 2; h++)
-        snd_buf[h] = gwenesis_ym2612_buffer[h / 2 / GWENESIS_AUDIO_SAMPLING_DIVISOR] + 
-                  (gwenesis_sn76489_buffer[h / 2 / GWENESIS_AUDIO_SAMPLING_DIVISOR] / (2 << (11-snd_output_volume))) + 128;
+        snd_buf[h] = gwenesis_ym2612_buffer[h / 2 / GWENESIS_AUDIO_SAMPLING_DIVISOR] + (gwenesis_sn76489_buffer[h / 2 / GWENESIS_AUDIO_SAMPLING_DIVISOR] / (2 << (11 - snd_output_volume))) + 128;
 
       if (enqueSndBuf(snd_buf, ym2612_index * GWENESIS_AUDIO_SAMPLING_DIVISOR * 2, NONBLOCKING, SRC_RAM) <= 1) {
         // data coming in too slowly - slow down output
@@ -218,7 +184,7 @@ void makeGraphics() {
         sndSetSpeed(snd_speed_div, snd_speed_fract);
       }
     }  // enque buffer
-  }    // loop
+  }  // loop
 }
 
 /* Main */
@@ -238,25 +204,21 @@ int main() {
   initSound();
   sndSetSpeed(3, 127);
 
-  glcdBacklight(30);
+  glcdBacklight(50);
 
   /* Load ROM  */
-#ifdef ROM_HEADER_FILE
-  ROM_DATA = ROM_DATA_FLASH;
+#if 0
+  // TODO: auto calculate data offset - not working
+  uint32_t rom_addr = __flash_binary_end + FLASH_SECTOR_SIZE * 10;
+  if (rom_addr % FLASH_SECTOR_SIZE) {
+    rom_addr = (rom_addr / FLASH_SECTOR_SIZE + 1) * FLASH_SECTOR_SIZE;
+  }
+  ROM_METADATA = (const unsigned char*) rom_addr;
 #else
-  ROM_DATA = (const unsigned char*)0x100c3500;  // 800 KB application, the rest is data
+  ROM_METADATA = (const unsigned char*) 0x100c3500;  // fixed offset: 800 KB application
 #endif
 
-  /* emulator init */
-  load_cartridge();
-  gwenesis_system_init();
-  power_on();
-  reset_emulation();
-
-  /* Setup 2nd CPU core */
-  mutex_init(&core1_busy);
-  multicore_reset_core1();
-  multicore_launch_core1(makeGraphics);
+  ROM_DATA = ROM_METADATA + FLASH_SECTOR_SIZE;  // header is the size of one erase block (FLASH_SECTOR_SIZE)
 
   /* setup graphics output */
   unsigned short* screen = glcdGetBuffer(320, 1);
@@ -278,20 +240,32 @@ int main() {
   for (int h = 0; h < vert_screen_offset / 2; h++)
     glcdSendBufferWord(empty_line, 320);
 
-  /* screen overlay */
-#ifdef DEBUG_DISPLAY
-  glcdBuffer_t* scr_overlay_buf = glcdGetBuffer(100, 50);
-#endif
+  //if (!check_rom_valid((uint8_t*) (ROM_DATA)))
+  emulator_menu();
 
-  uint32_t frame_timer_start = micros();
-  uint32_t frame_timer_end;
+  /* emulator init */
+  load_cartridge();
+  gwenesis_system_init();
+  power_on();
+  reset_emulation();
 
-#ifdef DEBUG_DISPLAY
+  /* Setup 2nd CPU core */
+  mutex_init(&core1_busy);
+  multicore_reset_core1();
+  multicore_launch_core1(makeGraphics);
+
+    /* screen overlay */
+  glcdBuffer_t* scr_overlay_buf = glcdGetBuffer(30, 20);
+  assert(scr_overlay_buf);
+  memset(&scr_overlay_buf[BUF_HEADER_SIZE], 0xaf, 30 * 20 * 2);
   char debug_print[11];
   uint32_t t0;
   uint16_t cnt = 0;
   t0 = millis();
-#endif
+
+  /* fps control */
+  uint32_t frame_timer_start = micros();
+  uint8_t frame_cnt = 0;
 
   while (true) {
 
@@ -345,9 +319,8 @@ int main() {
           // WA for VPD running one line ahead of CPU
           // TODO: fixme
           if (scan_line > 0 && scan_line < (SCREEN_HEIGHT - vert_screen_offset)) {
-#ifdef DEBUG_DISPLAY
-            glcdBlitBuf(210, -scan_line + 10, scr_overlay_buf, screen, 0x0001, SRC_RAM);
-#endif
+            if (enable_debug_display)
+              glcdBlitBuf(SCREEN_WIDTH - 30, -scan_line + 3, scr_overlay_buf, screen, 0xafaf, SRC_RAM);
             glcdSendBufferWord(&screen[BUF_HEADER_SIZE], 320);
           } else
             glcdSendBufferWord(empty_line, 320);
@@ -393,23 +366,12 @@ int main() {
       system_clock += VDP_CYCLES_PER_LINE;
     }
 
-    /* Frame rate control */
-    frame_timer_end = micros() - frame_timer_start;
-    frame_delay -= 16667 - frame_timer_end;
-
 // works for lost vikings (with sound_accurate == 0)
 #ifdef RUN_Z80_AFTER_MAINLOOP
-      /* Z80 CPU  */
-        if (audio_enabled && !snd_accurate)
-          z80_run(VDP_CYCLES_PER_LINE * 262);
+    /* Z80 CPU  */
+    if (audio_enabled && !snd_accurate)
+      z80_run(VDP_CYCLES_PER_LINE * 262);
 #endif
-
-    if (framedrop_mode == 1) {
-      if (frame_delay > 16667 * 2)
-        framedrop_cnt = 1;
-      else
-        framedrop_cnt = 0;
-    }
 
     if (framedrop_mode == 2) {
       framedrop_cnt++;
@@ -417,31 +379,49 @@ int main() {
         framedrop_cnt = 0;
     }
 
-    // Frame rate limiter - in case we ever might be too fast
-
-    if (frame_delay < 0) [[unlikely]] {
-      frame_delay = 0;
-      while (micros() - frame_timer_start < 16667);  // 60 Hz
-    }
-    
     /*  OSD */
-#ifdef DEBUG_DISPLAY
-    cnt++;
-    if (millis() - t0 > 1000) {
-      glcdFillRect(0, 0, glcdGetBufWidth(scr_overlay_buf) - 1, glcdGetBufHeight(scr_overlay_buf) - 1, 0x0001, scr_overlay_buf);
+    if (enable_debug_display) {
+      cnt++;
+      if (millis() - t0 > 1000) {
+        glcdFillRect(0, 0, glcdGetBufWidth(scr_overlay_buf) - 1, glcdGetBufHeight(scr_overlay_buf) - 1, 0xafaf, scr_overlay_buf);
 
-      itoa((float)cnt * 1000. / (float)(millis() - t0), debug_print, 10);
-      uint16_t col = audio_enabled ? RGBColor888_565(255, 255, 0) : 0xffff;
-      writeString(42, 2, 0x0000, 0xffff, FONT_TRANSP, debug_print, font_13x16, scr_overlay_buf);
-      writeString(40, 0, col, 0xffff, FONT_TRANSP, debug_print, font_13x16, scr_overlay_buf);
+        itoa((float)cnt * 1000. / (float)(millis() - t0), debug_print, 10);
+        writeString(2, 2, 0x0000, 0x1, FONT_TRANSP, debug_print, (glcdFont_t*)pixelmix_14_16, scr_overlay_buf);
+        writeString(0, 0, RGBColor888_565(255, 255, 0), 0x1, FONT_TRANSP, debug_print, (glcdFont_t*)pixelmix_14_16, scr_overlay_buf);
 
-      t0 = millis();
-      cnt = 0;
+        t0 = millis();
+        cnt = 0;
+      }
     }
-#endif
-
     // reset m68k cycles to the begin of next frame cycle
     m68k.cycles -= system_clock;
+
+    /* Long press all three buttons to to toggle sound output */
+    uint16_t buts = checkButtons();
+
+    if (((buts & BUTTON_1) != 0) && ((buts & BUTTON_2) != 0) && ((buts & BUTTON_3) != 0)) {
+      if (evoke_menu == 0) {
+        evoke_menu = 1;
+        longpress_s_timer = millis();
+      }
+      if (evoke_menu == 1) {
+        if (millis() - longpress_s_timer > 2000) {
+          evoke_menu = 0;
+          emulator_menu();
+        }
+      }
+    } else {
+      evoke_menu = 0;
+    }
+
+    // Frame rate limiter - in case we ever might be too fast
+    #define FRAME_AVG 3   
+    frame_cnt++;
+    if (frame_cnt == FRAME_AVG) {
+      while (micros() - frame_timer_start < 16667 * FRAME_AVG);  // 60 Hz
+      frame_timer_start = micros();
+      frame_cnt = 0;
+    }
 
   }  // end of emulator loop
 }

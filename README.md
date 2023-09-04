@@ -6,26 +6,20 @@
 
 ## Summary
 
-This is a Sega Genesis/Mega Drive emulator running on the *Pico Held* - a RP2040 powered DIY opensource handheld.
-It can playback quite some Sega Genesis games. Performance (especially sound output) majorly depends on the game played - YMMV.
+This is a *Sega Genesis/Mega Drive* emulator running on the *Pico Held* - a RP2040 powered DIY opensource handheld.
+It can playback quite some *Genesis* games. Performance (especially sound output) majorly depends on the game played - YMMV.
 
 ## Building
 
 Since this is intended to be built with the *Arduino* IDE building is as simple as clicking on the "upload" button. However you will need to install *Earle Philhower's* *Raspberry Pi Pico Arduino core* (no further dependencies are involved).
 
+You can find a prebuilt binary in the *artifacts* folder.
+
 ## Compiler switches
-
-`#define DEBUG_DISPLAY`
-
-Display FPS counter in the top right corner.
 
 `#define OVERCLOCK`
 
 Enable overclocking.
-
-`#define ROM_HEADER_FILE`
-
-If defined, you need to supply the ROM as header file (see romconv_hex in this repo for details). This way, there is no need to manually upload a ROM using `picotool`. However you need to reflash the whole sketch every time you want to change the ROM. So this is considered for development/debug purposes only.
 
 `#define RUN_Z80_AFTER_MAINLOOP`
 
@@ -33,12 +27,21 @@ Defines at what place în the code the Z80 CPU runs. Since the sound chips are n
 
 ## Playing games
 
-Once the sketch is uploaded to the *Pico Held* you may then upload a ROM in the next step.
-To do so, you need to first convert the ROM. Use the *binary* (NOT the hex one) ROM converter that comes with this repo.
-Afterwards upload the ROM to the *Pico Held* by first launching the bootloader (hold all three buttons down while powering in the *Pico Held*). Then upload the converted ROM using *picotool* found [here.](https://github.com/raspberrypi/picotool)
-(See the example in the `Readme.md` in the `romconv_bin` directory.)
+![Emulation manager](images/emumgr.jpg)
 
-There is currently support for only one game at a time stored in flash however implementing a little rom selector should not be too hard.
+**!! UPDATE !!**
+
+There now is an emulation manager which can be used to manage some options (like ROM selection, saving/loading games states, brightness settings and a couple more things).
+
+To get to the emulation manager while playing press and hold all three buttons.
+
+The ROM manager currently supports English and German (select appropriate language header file in *emumgr.cpp*).
+
+Place your ROMs onto the SD card to the folder /md/roms/. Savegames will be placed in /md/save/
+
+**!! ATTENTION !!**
+
+Due to a bug in the SD subsystem ROMs randomly cannot be read to the end (last 1.2 KB missing). A current workaround is to append 2K of arbitrary data to the end of the ROM file (use a hex editor to do so).
 
 ## Notes
 

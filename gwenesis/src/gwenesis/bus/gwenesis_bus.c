@@ -58,6 +58,7 @@ void bus_log(const char *subs, const char *fmt, ...) {
 // Setup M68k memories ROM & RAM
 //#include "rom_manager.h"
 const unsigned char* ROM_DATA; // 68K Main Program (uncompressed)
+const unsigned char* ROM_METADATA; // 68K Main Program (uncompressed)
 //unsigned char* M68K_RAM=(void *)(uint32_t)(0); // 68K RAM 
 unsigned char M68K_RAM[MAX_RAM_SIZE]; // 68K RAM 
 //unsigned char* M68K_RAM; // 68K RAM 

@@ -34,10 +34,10 @@
 #define LCD_PIN_D0    6     // 1st of the 8 data pins
 
 // SD pins
-#define SD_MISO       16
-#define SD_MOSI       19
-#define SD_SCK        18
-#define SD_CS         17
+#define PIN_SD_MISO       16
+#define PIN_SD_MOSI       19
+#define PIN_SD_SCK        18
+#define PIN_SD_CS         17
 
 /* ------------------------ screen orientatin ------------------------*/
 // 0 = 0° (portrait), 1 = 90° (landscape), 2 = 180° (portrait), 3 = 270° (landscape)

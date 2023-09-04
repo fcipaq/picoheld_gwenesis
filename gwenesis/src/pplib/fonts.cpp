@@ -9,19 +9,19 @@
 uint32_t plus = 0;
 
 glcdCoord_t getFontFrstChar(glcdFont_t* font) {
-  return pgm_read_byte((uint8_t*) &font[FONT_HEADER_FRST_CHAR]);
+  return font[FONT_HEADER_FRST_CHAR];
 }
 
 glcdCoord_t getFontLstChar(glcdFont_t* font) {
-  return pgm_read_byte((uint8_t*) &font[FONT_HEADER_LST_CHAR]);
+  return font[FONT_HEADER_LST_CHAR];
 }
 
 glcdCoord_t getFontHeight(glcdFont_t* font) {
-  return pgm_read_byte((uint8_t*) &font[FONT_HEADER_FNT_HEIGHT]);
+  return font[FONT_HEADER_FNT_HEIGHT];
 }
 
 glcdCoord_t getFontWidth(glcdFont_t* font) {
-  return pgm_read_byte((uint8_t*) &font[FONT_HEADER_FNT_WIDTH]);
+  return font[FONT_HEADER_FNT_WIDTH];
 }
 
 glcdCoord_t getFontCharWidth(char c, glcdFont_t* font) {
@@ -29,7 +29,7 @@ glcdCoord_t getFontCharWidth(char c, glcdFont_t* font) {
     return -1;
 
   c -= getFontFrstChar(font);
-  return pgm_read_byte((uint8_t*) &font[FONT_HEADER_CHAR_WIDTH + c]);
+  return font[FONT_HEADER_CHAR_WIDTH + c];
 }
 
 uint16_t getFontDataOfs(glcdFont_t* font) {
@@ -46,8 +46,6 @@ void putChar(glcdCoord_t pos_x, glcdCoord_t pos_y, glcdColor_t c1, glcdColor_t c
   if (c < getFontFrstChar(font) || c > getFontLstChar(font))
     return;
     
-  uint8_t charnum = c - getFontFrstChar(font);
-
   uint32_t total_width = 0;
   
   for (char i = getFontFrstChar(font); i < c; i++)
@@ -60,7 +58,7 @@ void putChar(glcdCoord_t pos_x, glcdCoord_t pos_y, glcdColor_t c1, glcdColor_t c
   uint8_t bitcnt = (uint32_t) total_bits % 8;
   uint8_t datcnt = 0;
 
-  char fnt_dat = pgm_read_byte((uint8_t*) &font[data_ofs]);
+  char fnt_dat = font[data_ofs];
 
    for (uint16_t x = 0; x < charWidth; x++)
     for (uint16_t y = 0; y < charHeight; y++)
@@ -68,7 +66,7 @@ void putChar(glcdCoord_t pos_x, glcdCoord_t pos_y, glcdColor_t c1, glcdColor_t c
       if (bitcnt == 8) {
         bitcnt = 0;
         datcnt++;
-        fnt_dat = pgm_read_byte((uint8_t*) &font[data_ofs + datcnt]);
+        fnt_dat = font[data_ofs + datcnt];
       }
             
       if ((pos_y + y) >= 0 && (pos_y + y) < bufHeight &&
@@ -91,9 +89,29 @@ void writeString(glcdCoord_t pos_x, glcdCoord_t pos_y, glcdColor_t c1, glcdColor
   glcdCoord_t ofs_x = 0;
   
   while (str[h] != 0) {
-    putChar(pos_x + ofs_x, pos_y, c1, c2, alpha, str[h], font, buf);
-    ofs_x += getFontCharWidth(str[h], font) + 1;
+	if (str[h] != 0x20) {
+      putChar(pos_x + ofs_x, pos_y, c1, c2, alpha, str[h], font, buf);
+      ofs_x += getFontCharWidth(str[h], font) + 1;
+	} else {
+      ofs_x += 8;
+	}
     h++;
   }
 
+}
+
+int font_get_string_width(char* str, glcdFont_t* font) {
+  int h = 0;
+  uint16_t len = 0;
+  
+  while (str[h] != 0) {
+    len += getFontCharWidth(str[h], font) + 1;
+    h++;
+  } 
+
+  return len;
+}
+
+void font_write_string_centered(glcdCoord_t pos_x, glcdCoord_t y, glcdColor_t col, char* str, glcdFont_t* font, glcdBuffer_t* dst) {
+  writeString(pos_x - font_get_string_width(str, font) / 2, y, col, 0, true, str, font, dst);
 }

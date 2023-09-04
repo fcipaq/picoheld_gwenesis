@@ -13,7 +13,10 @@
 #define FONT_TRANSP true
 #define FONT_BKG_COL false
 
+glcdCoord_t getFontHeight(glcdFont_t* font);
+
 void putChar(glcdCoord_t pos_x, glcdCoord_t pos_y, glcdColor_t c1, glcdColor_t c2, bool alpha, char c, glcdFont_t* font, glcdBuffer_t* buf);
 void writeString(glcdCoord_t pos_x, glcdCoord_t pos_y, glcdColor_t c1, glcdColor_t c2, bool alpha, char* str, glcdFont_t* font, glcdBuffer_t* buf);
+void font_write_string_centered(glcdCoord_t pos_x, glcdCoord_t y, glcdColor_t col, char* str, glcdFont_t* font, glcdBuffer_t* dst);
 
 #endif //FONTS_H

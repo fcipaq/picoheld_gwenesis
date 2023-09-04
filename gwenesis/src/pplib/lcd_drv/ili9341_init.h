@@ -72,20 +72,20 @@ void lcdControllerInit() {
   glcdSendDatByte(0x00);
 
   glcdSendCmdByte(ILI9341_PWCTR1);    //Power control
-  glcdSendDatByte(0x23);   //VRH[5:0]
-
+  glcdSendDatByte(0x0b);   // 3.4V reference
+  
   glcdSendCmdByte(ILI9341_PWCTR2);    //Power control
   glcdSendDatByte(0x10);   //SAP[2:0];BT[3:0]
 
   glcdSendCmdByte(ILI9341_VMCTR1);    //VCM control
-  glcdSendDatByte(0x3e);
-  glcdSendDatByte(0x28);
+  glcdSendDatByte(0x1c);  // 3.4V VCOMH
+  glcdSendDatByte(0x28);  // -0.5V VCOML
 
   glcdSendCmdByte(ILI9341_VMCTR2);    //VCM control2
   glcdSendDatByte(0x86);  //--
 
   glcdSendCmdByte(ILI9341_PIXFMT);
-  glcdSendDatByte(0x55);
+  glcdSendDatByte(0x55);  // 16 bits pixel format
 
   glcdSendCmdByte(ILI9341_FRMCTR1);
   glcdSendDatByte(0x00);
