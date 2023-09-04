@@ -39,6 +39,8 @@ The ROM manager currently supports English and German (select appropriate langua
 
 Place your ROMs onto the SD card to the folder /md/roms/. Savegames will be placed in /md/save/
 
+Note: ROMs will be loaded into flash. Therefore make sure, your flash size is at least the ROM size plus an additional 800K for the emulator code.
+
 **!! ATTENTION !!**
 
 Due to a bug in the SD subsystem ROMs randomly cannot be read to the end (last 1.2 KB missing). A current workaround is to append 2K of arbitrary data to the end of the ROM file (use a hex editor to do so).
@@ -63,11 +65,11 @@ Moreover, the RP2040 is not powerful enough to emulate all the *Mega Drive* hard
 
 - distributing the load to both cores. However RAM/ROM bandwidth becomes an issues and cores often stall waiting for the other core to finish access to the memory.
 
-- swapping ROMs byte wise (bytes in a 16bit word get swapped). You will need to convert the ROM prior usage. Use the converter is included in this repo.
+- A bug in the SD subsystem causes loading of some ROMs to fail. You can currently work around the issue by appending 2K of arbitrary data to the ROM file.
 
 Feel free to report bugs/open issues and I will **try** to come up with a fix. Again: Contributors welcome.
 
-As the framerate is below 60 fps and varies over time, the sound output has to adapt to the current framerate. The pitch will be leveled up at high framerate and leveled down at lower ones so sound output might get audibly distorted (especially music). The sound output system will *try* to keep up with the video pace.
+As the framerate is usually below 60 fps and varies over time, the sound output has to adapt to the current framerate. The pitch will be leveled up at high framerate and leveled down at lower ones so sound output might get audibly distorted (especially music). The sound output system will *try* to keep up with the video pace.
 
 ## Running without the *Pico Held*
 
