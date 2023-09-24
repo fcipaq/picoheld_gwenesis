@@ -154,6 +154,7 @@
 
 extern const unsigned char *ROM_DATA;
 extern const unsigned char *ROM_METADATA;
+//extern unsigned char* M68K_RAM;
 extern unsigned char M68K_RAM[];
 
 // ROM needs to be converted for this to work!

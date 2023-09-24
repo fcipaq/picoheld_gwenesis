@@ -36,6 +36,7 @@ void glcdDisplayOff(void);            // switch display off, booster off, sleep 
 void glcdBacklight(byte level);
 
 void dmaWait(void);
+void pioWait(void);
 int glcdIsDmaDone();
 
 void glcdSetAddr(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);

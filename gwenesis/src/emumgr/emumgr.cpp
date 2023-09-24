@@ -31,9 +31,12 @@
 #include "hardware/flash.h"
 #include "pico/bootrom.h"
 
-#include <SPI.h>
-#include <SD.h>
-//#include "../sd/RP2040_SD.h"
+#include "../sd/include/f_util.h"
+#include "../ff15/source/ff.h"
+#include "pico/stdlib.h"
+#include "../sd/include/rtc.h"
+//
+#include "../sd/sd_driver/hw_config.h"
 
 #include "emumgr.h"
 //#include "emumgr_lang_de.h"
@@ -55,13 +58,21 @@ extern uint8_t enable_debug_display;
 extern uint8_t snd_accurate;
 extern int snd_output_volume;
 extern volatile uint8_t soll_snd;
-File savestate_file;
 extern const unsigned char* ROM_DATA;
+
+/* ------------------ SD I/O ------------------ */
+
+sd_card_t *pSD;
+FRESULT fr_sd_card;
+FIL savestate_file; 
+
+#define STR_ERROR_DEBUG "DEBUG"
 
 #define MENU_FONT pixelmix_14_16
 //#define MENU_FONT font_13x16
 
 #define SAVESTATE_DIRECTORY "/md/save/"
+#define SAVESTATE_DIRECTORY_1ST_LVL "/md"
 #define ROM_DIRECTORY "/md/roms/"
 
 #define RM_SUCCESS 0
@@ -71,31 +82,30 @@ extern const unsigned char* ROM_DATA;
 #define RM_ERR_FLASHING_ROM -4
 
 #define SELECTION_DELAY 200
-#define SELECTION_DELAY_ROMLIST 10
-
+#define SELECTION_DELAY_ROMLIST 0
 
 #define NUM_CONFIRM_MENU_ITEMS_OVERWRITE 3
 
 const char* confirm_menu_items_overwrite[NUM_CONFIRM_MENU_ITEMS_OVERWRITE] PROGMEM = { STR_CONFIRM_OVERWRITE,
-                                                                   STR_NO,
-                                                                   STR_YES };
+                                                                   STR_YES,
+                                                                   STR_NO };
 
 #define NUM_CONFIRM_MENU_ITEMS_BL 3
 
 const char* confirm_menu_items_bl[NUM_CONFIRM_MENU_ITEMS_BL] PROGMEM = { STR_CONFIRM_BL,
-                                                                   STR_NO,
-                                                                   STR_YES };
+                                                                   STR_YES,
+                                                                   STR_NO };
 
 #define NUM_MAIN_MENU_ITEMS 8
 
 const char* main_menu_items[NUM_MAIN_MENU_ITEMS] PROGMEM = { STR_MAIN_TITLE,
+															 STR_LAUNCH,
                                                              STR_LOAD,
                                                              STR_SAVE,
                                                              STR_SEL_ROM,
                                                              STR_SOUND,
                                                              STR_BRIGHTNESS,
-                                                             STR_OPTIONS,
-                                                             STR_LAUNCH };
+                                                             STR_OPTIONS  };
 
 #define NUM_OPT_MENU_ITEMS 5
 
@@ -176,9 +186,9 @@ const char* message_save[MSG_SAVE_NUM_ROWS] PROGMEM = { STR_SAVING_GAME_STATE,
 const char* message_error[MSG_ERROR_NUM_ROWS] PROGMEM = { STR_ERROR };
 
 
-void create_filename(char* s, int num, int ofs) {
+void remove_ws(char* s) {
   char a;
-  for (int h = ofs; h < 32 * 2 + 1; h += 2) {
+  for (int h = 0; h < 32 * 2 + 1; h += 2) {
     a = s[h];
     s[h] = s[h + 1];
     s[h + 1] = a;
@@ -188,7 +198,13 @@ void create_filename(char* s, int num, int ofs) {
     if (*s2 != ' ')
       *s++ = *s2;
   }
-  *s++ = num + 0x30;
+  
+#if 0
+  // append index to string in case index >= 0
+  if (index >= 0)
+    *s++ = index + 0x30;
+#endif
+
   *s = 0;
 }
 
@@ -279,6 +295,7 @@ void message2(String m1, String m2, int rows, int delay_ms) {
 int selection_menu(const char** menu, int menu_items, int sel_delay, int cyclic, int preselect, int backkey) {
   int ret = 0;
   int debounce = 1;
+  int debounce_fist = 1;
   uint16_t color = 0;
   int8_t selected_item = preselect;
   
@@ -322,11 +339,12 @@ int selection_menu(const char** menu, int menu_items, int sel_delay, int cyclic,
     uint16_t dpad = checkDPad();
     uint16_t bts = checkButtons();
 
-    if (debounce == -1) {
+    if (debounce == -1 || debounce_fist) {
       while (bts) {
         bts = checkButtons();
       }
       delay(sel_delay);
+	  debounce_fist = 0;
     }
 
     if (debounce > 0)
@@ -468,12 +486,28 @@ void draw_bar(int percent, char* title) {
   free((void*)scr_buf);
 }
 
-int flash_rom(File rom_file, uint8_t* rom_addr) {
-  String rom_file_str = rom_file.name();
+int flash_rom(char* rom_file, uint8_t* rom_addr) {
+  int ret = true;
+  FIL fil;
 
-  long rom_file_size = rom_file.size();
+  String file_name = rom_file;
+  String file_path = ROM_DIRECTORY;
+  file_path += file_name;
+
+  char file_path2[file_path.length() + 1];
+  file_path.toCharArray(file_path2, file_path.length() + 1);
+
+  if (f_open(&fil, &file_path2[0], FA_OPEN_EXISTING | FA_READ) != FR_OK) {
+    message2(STR_ERROR, STR_READING_ROM, 2, 2000);
+    return false;
+  }
+
+  long rom_file_size = f_size(&fil);
   long bytes_remaining = rom_file_size;
   long bytes_written = 0;
+
+  uint8_t percent = 0;
+  uint8_t percent_old = 0;
 
   uint32_t rom_addr_int = ((uint32_t)&rom_addr[0]) - XIP_BASE;
 
@@ -483,31 +517,22 @@ int flash_rom(File rom_file, uint8_t* rom_addr) {
     return false;
   }
 
-  int ret = true;
-  uint8_t percent = 0;
-  uint8_t percent_old = 0;
+  delay(501);
 
   long erase_size = rom_file_size;
 
   if (erase_size % FLASH_SECTOR_SIZE)
     erase_size = (erase_size / FLASH_SECTOR_SIZE + 1) * FLASH_SECTOR_SIZE;
 
-  for (int i = 0; i < erase_size / FLASH_SECTOR_SIZE; i++) {
-    flash_range_erase(rom_addr_int + i * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
-    //	percent = 100 * (i * FLASH_SECTOR_SIZE) / erase_size;
-    percent = 66 * (i * FLASH_SECTOR_SIZE) / erase_size;
-    if (percent - percent_old > 5) {
-      percent_old = percent;
-      draw_bar(percent, STR_LOADING);
-    }
-  }
-
-  //percent_old = 0;
-
   while (bytes_remaining > 0) {
     //memset(M68K_RAM, 0, FLASH_SECTOR_SIZE);
 
-    int read_len = rom_file.readBytes((char*)M68K_RAM, bytes_remaining < FLASH_SECTOR_SIZE ? bytes_remaining : FLASH_SECTOR_SIZE);
+    UINT read_len;
+    if (f_read(&fil, (void*) M68K_RAM, bytes_remaining < FLASH_SECTOR_SIZE ? bytes_remaining : FLASH_SECTOR_SIZE, (UINT*) &read_len) != FR_OK) {
+      //TODO
+      message2(STR_ERROR_DEBUG, STR_SLOT_4, 2, 2000);
+      break;
+    }    
 
     // swap hi/lo byte --> emu performance improvement due to different endianess
     for (int i = 0; i < FLASH_SECTOR_SIZE; i += 2) {
@@ -517,11 +542,10 @@ int flash_rom(File rom_file, uint8_t* rom_addr) {
     }
 
     // erasing flash here does not work...
-    //flash_range_erase(rom_addr_int + bytes_written, FLASH_SECTOR_SIZE);
+    flash_range_erase(rom_addr_int + bytes_written, FLASH_SECTOR_SIZE);
     flash_range_program(rom_addr_int + bytes_written, M68K_RAM, FLASH_SECTOR_SIZE);
 
-    //percent = 100 - 100 * bytes_remaining / rom_file_size;
-    percent = 100 - 33 * bytes_remaining / rom_file_size;
+    percent = 100 - 100 * bytes_remaining / rom_file_size;
     if (percent - percent_old > 5) {
       percent_old = percent;
       draw_bar(percent, STR_LOADING);
@@ -531,22 +555,10 @@ int flash_rom(File rom_file, uint8_t* rom_addr) {
     bytes_written += FLASH_SECTOR_SIZE;
   }
 
-  rom_file.close();
-
-#if WRITE_BACK_FILE_TO_SD
-  rom_file = SD.open("/cmp.bin", FILE_WRITE);
-  bytes_remaining = rom_file_size;
-  bytes_written = 0;
-  while (bytes_remaining > 0) {
-    rom_file.write(&ROM_DATA[bytes_written], FLASH_SECTOR_SIZE < bytes_remaining ? FLASH_SECTOR_SIZE : bytes_remaining);
-    bytes_remaining -= FLASH_SECTOR_SIZE;
-    bytes_written += FLASH_SECTOR_SIZE;
-  }
-  rom_file.close();
-#endif
+  f_close(&fil);
 
   // reset machine
-  // let's just hope noone messed with the WD settings...
+  // fingers crossed no one messed with the WD settings...
   watchdog_reboot(0, 0, 1);
   watchdog_enable(1, false);
 
@@ -560,9 +572,14 @@ int load_rom() {
   int h = 1;
   int eod = 0;  // end of dir
   int preselect = 1;
-  File rom_file;
   int sel = 0;
 
+  char cwdbuf[FF_LFN_BUF] = {0};
+  FRESULT fr; /* Return value */
+  char const *p_dir;
+  DIR dj;      /* Directory object */
+  FILINFO fno; /* File information */
+  
   char* rom_file_list[NUM_ROM_FILE_LIST];
 
   rom_file_list[0] = (char*)rom_file_list_header;
@@ -572,11 +589,13 @@ int load_rom() {
     assert(rom_file_list[i]);
   }
 
-  File rom_dir = SD.open(ROM_DIRECTORY);
+  memset(&dj, 0, sizeof dj);
+  memset(&fno, 0, sizeof fno);
+  
+  fr = f_opendir(&dj, ROM_DIRECTORY);
 
-  if (!rom_dir.isDirectory()) {
-    rom_dir.close();
-    message2(STR_ERROR, STR_READ_ROM_DIR, 2, 2000);
+  if (FR_OK != fr) {
+    message2(STR_READ_ROM_DIR, ROM_DIRECTORY, 2, 2000);
     ret = RM_ERR_NO_DIR;
     goto bailout;
   }
@@ -587,18 +606,18 @@ int load_rom() {
 
     if (sel != -2) {
       if (sel == -1) {
-        rom_dir.rewindDirectory();
-
+        f_rewinddir(&dj);
+		
         ofs--;
         if (ofs < 0)
           ofs = 0;
 
         for (h = 0; h < ofs; h++) {
           while (1) {
-            rom_file = rom_dir.openNextFile();
-            if (!rom_file)
+            fr = f_readdir(&dj, &fno);
+            if (!(fr == FR_OK && fno.fname[0]))
               goto allofsfilesread;
-            if (!rom_file.isDirectory())
+            if (!(fno.fattrib & AM_DIR))
               break;
           }
         }
@@ -609,27 +628,27 @@ allofsfilesread:
       for (h = 1; h < NUM_ROM_FILE_LIST; h++) {
 
         do {
-          rom_file = rom_dir.openNextFile();
-        } while (rom_file && rom_file.isDirectory());
+          fr = f_readdir(&dj, &fno);
+        } while (fr == FR_OK && fno.fname[0] && (fno.fattrib & AM_DIR));
 
-        if (!rom_file) {
+        if (!(fr == FR_OK && fno.fname[0])) {
           eod = 1;
           break;
         } else {
           eod = 0;
         }
 
-        String rom_file_str = rom_file.name();
+        String rom_file_str = fno.fname;
 
         rom_file_str = rom_file_str.substring(0, ROM_FILE_LIST_NAME_LENGTH);
         rom_file_str.toCharArray(rom_file_list[h], ROM_FILE_LIST_NAME_LENGTH);
       }
     } else {
       do {
-        rom_file = rom_dir.openNextFile();
-      } while (rom_file && rom_file.isDirectory());
+        fr = f_readdir(&dj, &fno);
+      } while (fr == FR_OK && fno.fname[0] && (fno.fattrib & AM_DIR));
 
-      if (!rom_file) {
+      if (!(fr == FR_OK && fno.fname[0])) {
         eod = 1;
         goto no_more_roms;
       } else {
@@ -643,7 +662,7 @@ allofsfilesread:
 
       h++;  // for selection_menu
 
-      String rom_file_str = rom_file.name();
+      String rom_file_str = fno.fname;
       rom_file_str = rom_file_str.substring(0, ROM_FILE_LIST_NAME_LENGTH);
       rom_file_str.toCharArray(rom_file_list[NUM_ROM_FILE_LIST - 1], ROM_FILE_LIST_NAME_LENGTH);
     }
@@ -670,20 +689,20 @@ no_more_roms:
 
   message2(STR_FLASHING_ROM, STR_PLEASE_WAIT, 2, 0);
 
-  rom_dir.rewindDirectory();
+  f_rewinddir(&dj);
 
   for (int i = 0; i < ofs + sel; i++) {
     do {
-      rom_file = rom_dir.openNextFile();
-    } while (rom_file && rom_file.isDirectory());
-    if (!rom_file) {
+      fr = f_readdir(&dj, &fno);
+    } while (fr == FR_OK && fno.fname[0] && (fno.fattrib & AM_DIR));
+    if (!(fr == FR_OK && fno.fname[0])) {
       message2(STR_ERROR, STR_READING_ROM, 2, 2000);
       ret = RM_ERR_READING_ROM;
       goto bailout;
     }
   }
 
-  if (!flash_rom(rom_file, (uint8_t*)ROM_DATA)) {
+  if (!flash_rom(fno.fname, (uint8_t*)ROM_DATA)) {
     ret = RM_ERR_FLASHING_ROM;
     message2(STR_ERROR, STR_FLASHING_ROM, 2, 2000);
   }
@@ -705,7 +724,9 @@ int saveGwenesisStateGet(SaveState* state, const char* tagName) {
 }
 
 void saveGwenesisStateGetBuffer(SaveState* state, const char* tagName, void* buffer, int length) {
-  savestate_file.read((uint8_t*)buffer, length);
+  UINT read_len;
+  if (f_read(&savestate_file, buffer, length, &read_len) != FR_OK)
+    message2(STR_ERROR, STR_READING_SAV, 2, 1000);
 }
 
 void saveGwenesisStateSet(SaveState* state, const char* tagName, int value) {
@@ -713,7 +734,18 @@ void saveGwenesisStateSet(SaveState* state, const char* tagName, int value) {
 }
 
 void saveGwenesisStateSetBuffer(SaveState* state, const char* tagName, void* buffer, int length) {
-  savestate_file.write((uint8_t*)buffer, length);
+  UINT written_len;
+
+  uint32_t pos = 0;
+  
+  #define EMUMGR_CHUNK_SIZE 1024
+
+  do {
+    if (f_write(&savestate_file, (void*) ((uint32_t) buffer + pos), length - pos > EMUMGR_CHUNK_SIZE ? EMUMGR_CHUNK_SIZE : length - pos, &written_len) != FR_OK)
+      message2(STR_ERROR, STR_WRITING_SAV, 2, 1000);
+    pos += written_len;
+  } while (pos < length);
+
 }
 
 SaveState* saveGwenesisStateOpenForRead(const char* fileName) {
@@ -724,80 +756,139 @@ SaveState* saveGwenesisStateOpenForWrite(const char* fileName) {
   return (SaveState*)1;
 }
 
-bool init_sd_card() {
-  SPI.setRX(PIN_SD_MISO);
-  SPI.setTX(PIN_SD_MOSI);
-  SPI.setSCK(PIN_SD_SCK);
+void unmount_sd_card() {
+  f_unmount(pSD->pcName);
+}
 
-  if (!SD.begin(PIN_SD_CS))
-    return false;
+bool init_sd_card() {
+  pSD = sd_get_by_num(0);
+  if (!pSD) 
+    goto out_error;
+
+  fr_sd_card = f_mount(&pSD->fatfs, pSD->pcName, 1);
+
+  if (FR_OK == fr_sd_card)
+    goto out_success;
   else
+    goto out_error;
+  
+  out_success:
     return true;
+
+  out_error:
+    message2(STR_ERROR, STR_READING_ROM, 2, 1000);
+    return false;
 }
 
 bool savestate(int num) {
-  char filename[100] = SAVESTATE_DIRECTORY;
-  int a = strlen(filename);
 
-  // concatenate strings without library
-  memcpy((void*)(filename + a), (void*)((unsigned long)&ROM_DATA[0] + 0x150), 32);
-  filename[a + 31] = '/';
-  memcpy((void*)(filename + a + 32 + 0), (void*)((unsigned long)&ROM_DATA[0] + 0x150), 32);
-  filename[a + 32 * 2] = 0;
+  char tochar[100] = SAVESTATE_DIRECTORY;
+  char tmp_char[33];
+  FRESULT fr;
 
-  create_filename(filename, num, a);
+  // TODO make this a recursive subdirectory creation
+  fr = f_mkdir(SAVESTATE_DIRECTORY_1ST_LVL);
 
-  if (SD.exists(filename)) {
+  if ((fr != FR_OK) && (fr != FR_EXIST)) {
+    message2(STR_ERROR, STR_WRITING_DIR, 2, 1000);
+    return false;
+  }
 
-    uint8_t sel = selection_menu(confirm_menu_items_overwrite, NUM_CONFIRM_MENU_ITEMS_OVERWRITE, SELECTION_DELAY, 1, 1, 0);
+  fr = f_mkdir(SAVESTATE_DIRECTORY);
 
-    if (sel != 2)
+  if ((fr != FR_OK) && (fr != FR_EXIST)) {
+    message2(STR_ERROR, STR_WRITING_DIR, 2, 1000);
+    return false;
+  }
+  
+  // copy ROM name from header to char array
+  memcpy((void*) (tmp_char), (void*) ((unsigned long) &ROM_DATA[0] + 0x120), 32);
+  tmp_char[32] = 0;
+
+  // remove spaces
+  remove_ws(tmp_char);
+
+  tmp_char[7] = num + 0x30;  // append slot #
+  tmp_char[8] = 0;  // truncate file name to 8
+
+  String file_path_append = tmp_char;
+  String file_path = SAVESTATE_DIRECTORY;
+  file_path += file_path_append;
+
+  file_path.toCharArray(tochar, 100);
+  
+  FILINFO finfo;
+
+  if ((f_stat((TCHAR*) &tochar, &finfo) & FR_NO_FILE) == 0) {
+    uint8_t sel = selection_menu(confirm_menu_items_overwrite, NUM_CONFIRM_MENU_ITEMS_OVERWRITE, SELECTION_DELAY, 1, 2, 0);
+
+    if (sel != 1) {
+      message2(STR_GAMESTATE, STR_GAMESTATE_NS, 2, 1000);
       return false;
+    }
+  }
 
-    SD.remove(filename);
+  if (f_open(&savestate_file, (TCHAR*) &tochar, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) {
+    message2(STR_ERROR, STR_WRITING_SAV, 2, 1000);
+    return false;
   }
 
   message(message_save, MSG_SAVE_NUM_ROWS, 0);
 
-  SD.mkdir(SAVESTATE_DIRECTORY);
-
-  savestate_file = SD.open(filename, FILE_WRITE);
-
-  if (!savestate_file) {
-    message(message_error, MSG_ERROR_NUM_ROWS, 2000);
-    return false;
-  }
-
   gwenesis_save_state();
 
-  savestate_file.close();
+  f_close(&savestate_file);
 
   return true;
 }
 
 bool loadstate(int num) {
-  char filename[100] = SAVESTATE_DIRECTORY;
-  int a = strlen(filename);
 
-  // concatenate strings without library
-  memcpy((void*)(filename + a), (void*)((unsigned long)&ROM_DATA[0] + 0x150), 32);
-  filename[a + 31] = '/';
-  memcpy((void*)(filename + a + 32 + 0), (void*)((unsigned long)&ROM_DATA[0] + 0x150), 32);
-  filename[a + 32 * 2] = 0;
+  char tochar[100] = SAVESTATE_DIRECTORY;
+  char tmp_char[33];
+  FRESULT fr;
 
-  create_filename(filename, num, a);
+  // TODO: Due to a bug (in the SD lib?) directory creation randomly fails
+  // TODO make this a recursive subdirectory creation
+  fr = f_mkdir(SAVESTATE_DIRECTORY_1ST_LVL);
 
-  savestate_file = SD.open(filename, FILE_READ);
+  if ((fr != FR_OK) && (fr != FR_EXIST)) {
+    message2(STR_ERROR, STR_WRITING_DIR, 2, 1000);
+    return false;
+  }
 
-  if (!savestate_file) {
+  fr = f_mkdir(SAVESTATE_DIRECTORY);
+
+  if ((fr != FR_OK) && (fr != FR_EXIST)) {
+    message2(STR_ERROR, STR_WRITING_DIR, 2, 1000);
+    return false;
+  }
+  
+  // copy ROM name from header to char array
+  memcpy((void*) (tmp_char), (void*) ((unsigned long) &ROM_DATA[0] + 0x120), 32);
+  tmp_char[32] = 0;
+
+  // remove spaces
+  remove_ws(tmp_char);
+
+  tmp_char[7] = num + 0x30;  // append slot #
+  tmp_char[8] = 0;  // truncate file name to 8
+
+  String file_path_append = tmp_char;
+  String file_path = SAVESTATE_DIRECTORY;
+  file_path += file_path_append;
+
+  file_path.toCharArray(tochar, 100);
+
+  if (f_open(&savestate_file, (TCHAR*) &tochar, FA_OPEN_EXISTING | FA_READ) != FR_OK) {
     message(message_error, MSG_ERROR_NUM_ROWS, 2000);
     return false;
   }
 
   gwenesis_load_state();
 
-  savestate_file.close();
-
+  f_close(&savestate_file);
+  
   return true;
 }
 
@@ -807,31 +898,39 @@ void emulator_menu() {
   uint8_t sel = 0;
   uint8_t sel2 = 0;
 
-  while (sel != 7) {
+  while (sel != 1) {
     sel = selection_menu(main_menu_items, NUM_MAIN_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
 
     switch (sel) {
-      case 1:
+      case 2:
         sel2 = selection_menu(load_menu_items, NUM_LOAD_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
         if (sel2 != 7) {
-          init_sd_card();
-          if (loadstate(sel2))
-            return;
-        }
-        break;
-      case 2:
-        sel2 = selection_menu(save_menu_items, NUM_SAVE_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
-        if (sel2 != 7) {
-          init_sd_card();
-          if (savestate(sel2))
-            return;
+          if (init_sd_card()) {
+            int ret = loadstate(sel2);
+		        unmount_sd_card();
+		        if (ret)
+              return;
+          }
         }
         break;
       case 3:
-        init_sd_card();
-        load_rom();
+        sel2 = selection_menu(save_menu_items, NUM_SAVE_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
+        if (sel2 != 7) {
+          if (init_sd_card()) {
+            int ret = savestate(sel2);
+		        unmount_sd_card();
+		        if (ret)
+              return;
+          }
+        }
         break;
       case 4:
+          if (init_sd_card()) {
+            load_rom();
+		        unmount_sd_card();
+          }
+        break;
+      case 5:
         sel2 = selection_menu(snd_menu_items, NUM_SND_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
         if (sel2 <= 5) {
           if (sel2 != 1) {
@@ -851,12 +950,12 @@ void emulator_menu() {
           }
         }
         break;
-      case 5:
+      case 6:
         sel2 = selection_menu(bri_menu_items, NUM_BRI_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
         if (sel2 != 6)
           glcdBacklight(sel2 * 20);
         break;
-      case 6:
+      case 7:
         sel2 = selection_menu(opt_menu_items, NUM_OPT_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
 		if (sel2 == 1) {
 		  int sel3 = selection_menu(btn_menu_items, NUM_BTN_MENU_ITEMS, SELECTION_DELAY, 1, 1, 0);
@@ -872,8 +971,8 @@ void emulator_menu() {
           }
         }
 		if (sel2 == 3) {
-			uint8_t sel3 = selection_menu(confirm_menu_items_bl, NUM_CONFIRM_MENU_ITEMS_BL, SELECTION_DELAY, 1, 1, 0);
-			if (sel3 == 2) 
+			uint8_t sel3 = selection_menu(confirm_menu_items_bl, NUM_CONFIRM_MENU_ITEMS_BL, SELECTION_DELAY, 1, 2, 0);
+			if (sel3 == 1) 
                reset_usb_boot(0, 0);
         }
 		break;

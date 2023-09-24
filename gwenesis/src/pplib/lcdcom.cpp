@@ -369,11 +369,14 @@ bool dmaInit() {
 
   channel_config_set_dreq(&dma_tx_config, pio_get_dreq(lcd_pio, pio_sm, true));
 
+#if 0 
+  // disabled to use SPI SD card
   dma_channel_set_irq0_enabled(dma_tx_channel, true);
 
   irq_set_exclusive_handler(DMA_IRQ_0, dmaComplete);
 
   irq_set_enabled(DMA_IRQ_0, true);
+#endif
 
   DMA_Enabled = true;
 

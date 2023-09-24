@@ -145,6 +145,9 @@ typedef int16_t INT16;
 typedef int8_t INT8;
 #define INLINE static
 
+extern int audio_enabled;
+extern uint8_t snd_accurate;
+
 #define YM2612_DISABLE_LOGGING 1
 
 #if !YM2612_DISABLE_LOGGING
@@ -1848,7 +1851,7 @@ static void OPNSetPres(int pres)
   double freqbase = ym2612.OPN.ST.clock / ym2612.OPN.ST.rate / pres;
 
   //fcipaq
-  freqbase = GWENESIS_AUDIO_SAMPLING_DIVISOR;  // override the obove to prevent rounding error
+  freqbase = GWENESIS_AUDIO_SAMPLING_DIVISOR;  // override the above to prevent rounding error
 
   /* YM2612 running at original frequency (~53267 Hz) */
   //if (config.hq_fm) freqbase  = 1.0;
@@ -2054,8 +2057,15 @@ void YM2612ResetChip(void)
 /* n = number  */
 /* a = address */
 /* v = value   */
-void YM2612Write(unsigned int a, unsigned int v)
+void YM2612Write(unsigned int a, unsigned int v,  int target)
 {
+  if (!audio_enabled)
+	return;
+  
+  //Sync
+  if (snd_accurate == 1)
+    ym2612_run(target); 
+
   v &= 0xff;  /* adjust to 8 bit bus */
 
   switch( a )
@@ -2097,9 +2107,16 @@ void YM2612Write(unsigned int a, unsigned int v)
   }
 }
 
-unsigned int YM2612Read(void)
+unsigned int YM2612Read(int target)
 {
-  return ym2612.OPN.ST.status & 0xff;
+  if (!audio_enabled)
+	return 0;
+
+  // //Sync
+  if (snd_accurate == 1)
+    ym2612_run(target);
+
+return ym2612.OPN.ST.status & 0xff;
 }
 
 /* Generate samples for ym2612 */
@@ -2227,11 +2244,14 @@ void YM2612Update(uint8_t *buffer, int length)
   INTERNAL_TIMER_B(length);
 }
 
-void ym2612_run( int target) {
+void ym2612_run(int target) {
 
   if ( ym2612_clock >= target) {
     return;
   }
+  
+  target /= GWENESIS_AUDIO_SAMPLING_DIVISOR;
+  
   int ym2612_prev_index = ym2612_index;
   ym2612_index += (target-ym2612_clock) / ym2612.divisor;
   if (ym2612_index > ym2612_prev_index) {

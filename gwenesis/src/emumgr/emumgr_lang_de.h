@@ -38,12 +38,18 @@
 #define STR_FPS "Zeige FPS"
 #define STR_ENABLED "aktiviert"
 #define STR_DISABLED "deaktiviert"
+
 #define STR_ROM_TOO_BIG "ROM ist zu gro\xdf"
-#define STR_READ_ROM_DIR "beim Lesen des ROM Ordners"
+#define STR_READ_ROM_DIR "ROM-Ordner nicht lesbar:"
 #define STR_NO_ROMS "Keine ROMs gefunden in"
 #define STR_FLASHING_ROM "Laden wird vorbereitet"
 #define STR_LOAD_ROM "Ladevorgang starten"
 #define STR_READING_ROM "beim Lesen der SD-Karte"
+
+#define STR_READING_SAV "beim Lesen des Spielstands"
+#define STR_WRITING_SAV "beim Schreiben des Spielstands"
+#define STR_WRITING_DIR "beim Erstellen des Verzeichnisses"
+
 #define STR_PRESS_LEFT "Nach LINKS dr\xfc""cken"
 #define STR_RETURN "zum Abbrechen"
 #define STR_LOADING "Laden..."
@@ -55,6 +61,8 @@
 #define STR_CONFIRM_OVERWRITE "\xdc""berschreiben best\xe4tigen"
 #define STR_CONFIRM_BL "Bootloader starten best\xe4tigen"
 
+#define STR_GAMESTATE "Spielstand"
+#define STR_GAMESTATE_NS "NICHT gesichert"
 #define STR_SLOT_1 "Speicherplatz 1"
 #define STR_SLOT_2 "Speicherplatz 2"
 #define STR_SLOT_3 "Speicherplatz 3"

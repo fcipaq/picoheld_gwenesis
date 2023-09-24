@@ -70,11 +70,14 @@ static const int PSGVolumeValues[16] = {
     PSG_MAX_VOLUME_MAX/16,PSG_MAX_VOLUME_2dB/16,PSG_MAX_VOLUME_4dB/16,
     0};
 
+extern int audio_enabled;
+extern uint8_t snd_accurate;
+
 static SN76489_Context gwenesis_SN76489;
 
 void gwenesis_SN76489_Init( int PSGClockValue, int SamplingRate,int freq_divisor)
 {
-    gwenesis_SN76489.dClock=(float)PSGClockValue/16/SamplingRate;
+	gwenesis_SN76489.dClock=(float)PSGClockValue/16/SamplingRate*GWENESIS_AUDIO_SAMPLING_DIVISOR;
     gwenesis_SN76489.divisor = freq_divisor;
 
     gwenesis_SN76489_Reset();
@@ -210,6 +213,8 @@ void gwenesis_SN76489_run(int target) {
  
 if ( sn76489_clock >= target) return;
 
+  target /= GWENESIS_AUDIO_SAMPLING_DIVISOR;
+
   int sn76489_prev_index = sn76489_index;
   sn76489_index += (target-sn76489_clock) / gwenesis_SN76489.divisor;
   if (sn76489_index > sn76489_prev_index) {
@@ -221,7 +226,10 @@ if ( sn76489_clock >= target) return;
 }
 void gwenesis_SN76489_Write(int data, int target)
 {
-  if (GWENESIS_AUDIO_ACCURATE == 1)
+  if (!audio_enabled)
+	 return;
+
+  if (snd_accurate == 1)
     gwenesis_SN76489_run(target);
 
   if (data & 0x80) {

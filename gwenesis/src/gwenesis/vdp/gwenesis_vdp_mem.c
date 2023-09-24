@@ -63,6 +63,7 @@ void vdpm_log(const char *subs, const char *fmt, ...) {
 //extern uint8_t emulator_framebuffer[1024*64];
 //unsigned char* VRAM = &emulator_framebuffer[0];
 unsigned char VRAM[VRAM_MAX_SIZE];
+//unsigned char* VRAM = NULL;
 
 unsigned short CRAM[CRAM_MAX_SIZE];           // CRAM - Palettes
 unsigned char SAT_CACHE[SAT_CACHE_MAX_SIZE];  // Sprite cache

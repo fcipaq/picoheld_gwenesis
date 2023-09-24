@@ -32,12 +32,18 @@
 #define STR_FPS "Show FPS"
 #define STR_ENABLED "enabled"
 #define STR_DISABLED "disabled"
+
 #define STR_ROM_TOO_BIG "ROM too big"
-#define STR_READ_ROM_DIR "Reading ROM dir"
+#define STR_READ_ROM_DIR "Unable to read ROM dir:"
 #define STR_NO_ROMS "No ROMs found in"
 #define STR_LOAD_ROM "Preparing flashing"
 #define STR_FLASHING_ROM "Flashing ROM"
 #define STR_READING_ROM "Reading ROM from SD"
+
+#define STR_READING_SAV "Reading saved state"
+#define STR_WRITING_SAV "Saving game state"
+#define STR_WRITING_DIR "creating directory"
+
 #define STR_PRESS_LEFT "Press LEFT to"
 #define STR_RETURN "RETURN"
 #define STR_LOADING "Loading..."
@@ -49,6 +55,8 @@
 #define STR_CONFIRM_OVERWRITE "Confirm overwrite"
 #define STR_CONFIRM_BL "Confirm bootloader launch"
 
+#define STR_GAMESTATE "Game state"
+#define STR_GAMESTATE_NS "NOT saved"
 #define STR_SLOT_1 "Slot 1"
 #define STR_SLOT_2 "Slot 2"
 #define STR_SLOT_3 "Slot 3"
