@@ -11,7 +11,7 @@ It can playback quite some *Genesis* games. Performance (especially sound output
 
 ## Building
 
-Since this is intended to be built with the *Arduino* IDE building is as simple as clicking on the "upload" button. However, you will need to install *Earle Philhower's* *Raspberry Pi Pico Arduino core* (no further dependencies are involved).
+Since this is intended to be built with the *Arduino* IDE building is as simple as clicking on the "upload" button. However, you will need to install *Earle Philhower's* *Raspberry Pi Pico Arduino core* (no further dependencies are involved). Tested working with Arduino IDE 2.1.0
 
 You can find a prebuilt binary in the *artifacts* folder.
 
@@ -23,7 +23,7 @@ Enable overclocking.
 
 `GWENESIS_AUDIO_SAMPLING_DIVISOR`
 
-This compiler switch (found in gwenesis_bus.h) determines the sound quality (to be more specific: the sound samples generated per second). Ranging from `1` (best quality) to `10` (very poor quality). The default ist `6`. This has a hughe impact on performance.
+This compiler switch (found in gwenesis_bus.h) determines the sound quality (to be more specific: the sound samples generated per second). Ranging from `1` (best quality) to `10` (very poor quality). The default ist `6`. This has a huge impact on performance.
 
 ## Playing games
 
@@ -49,17 +49,18 @@ Due to a bug (in the SD/FAT library?) creating the save game directory randomly 
 
 When in game press and hold all three buttons to reach the emulator menu.
 
-You can then save/load game states as well as loading new ROMs.
+You can then save/load game states as well as load new ROMs.
 
 Note: ROMs will be loaded (byte swapped) into flash (for performance reasons). Therefore make sure, your flash size is at least the ROM size plus an additional 900K for the emulator code.
 
 ### Sound
 
 You can choose volume and the sound accuracy (i.e. either frame or cycle accurate sound generation). Changes to the sound accuracy should only be made before launching the game. Changing these settings while a game is running might crash the emulator or lead to unpredictable behavior.
+Choosing sound `Off` will disable sound generation and hence likely give you the most fps.
 
 ### Brightness
 
-Self explainatory.
+Self-explainatory.
 
 ### Settings
 
@@ -69,13 +70,11 @@ You can enable FPS display, change the button layout (TODO) and launch the bootl
 
 I ported the emulator at the very beginning when I started designing the *Pico Held* and so the *pplib* (hardware layer) that comes with this emulator is to be considered as premature. Best would be if you did not look at it at all. I just have not had the time to update the emulator to the current *pplib* library. If you're interested in the *pplib* software library for the *Pico Held* you might want to take a look at the [current version](https://github.com/fcipaq/picohero_pplib) - which is also at a very early stage of development :)
 
-If you do not want to use a SD card but rather flash (a) game(s) directly into flash, you may use on of the rom converters (in the `romconverter` subdir) to do the byte swapping for you.
+If you do not want to use a SD card but rather flash (a) game(s) directly into flash, you may use one of the rom converters (in the `romconverter` subdir) to do the byte swapping for you.
 
 ## Bugs and limitations
 
 I found some bugs but did not have the time to fix them. There are random issues with the underlying *Gwenesis* emulator which usually result in a hard fault and are hard to track down.
-
-Game states cannot be saved/loaded - even tough *bhzxx* provided all the infrastructure. The reason is I just didn't have the time to implement this. (Contributors welcome!)
 
 Moreover, the RP2040 is not powerful enough to emulate all the *Mega Drive* hardware with sufficient performance. Therefore, I had to do some "tweaking" in order to improve the execution performance:
 
@@ -83,13 +82,13 @@ Moreover, the RP2040 is not powerful enough to emulate all the *Mega Drive* hard
 
 - reducing the sampling rate in both the SN76489 as well as the YM2612 sound chip by a factor of 6 (see `GWENESIS_AUDIO_SAMPLING_DIVISOR`).
 
-- making the sound generation **line** or **frame** accurate (instead of **cycle** accurate). This causes the Z80 and the sound chips to get out of sync - and in many games this leads to flaws in the sound output (e.g. Sonic I: No "Sega" voice at the beginning and many more). However, this increases the performance by as much as 25 fps and I do not see a way around this other than having no sound at all.
+- making the sound generation **frame** accurate (instead of **cycle** accurate). This causes the Z80 and the sound chips to get out of sync - and in many games this leads to flaws in the sound output (e.g. Sonic I: No "Sega" voice at the beginning and many more). However, this increases the performance by as much as 25 fps and I do not see a way around this other than having no sound at all. However, you are free to choose cycle accurate audio generation from the emulator `settings` menu.
 
 - distributing the load to both cores. However, RAM/ROM bandwidth becomes an issues and cores often stall waiting for the other core to finish access to the memory.
 
-- A bug in the SD subsystem causes loading of some ROMs to fail. You can currently work around the issue by appending 2K of arbitrary data to the ROM file.
+- A bug in the SD subsystem causes the creation of the save directory on a "fresh" SD card to occasionally fail. (see "Playing games")
 
-Feel free to report bugs/open issues and I will **try** to come up with a fix. Again: Contributors welcome.
+Feel free to report bugs/open issues and I will **try** to come up with a fix. Contributors welcome :)
 
 As the framerate is usually below 60 fps and varies over time, the sound output has to adapt to the current framerate. The pitch will be leveled up at high framerate and leveled down at lower ones so sound output might get audibly distorted (especially music). The sound output system will *try* to keep up with the video pace.
 
