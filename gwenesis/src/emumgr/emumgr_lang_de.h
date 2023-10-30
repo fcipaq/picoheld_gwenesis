@@ -35,7 +35,6 @@
 #define STR_HIGH "hoch"
 #define STR_LOW "niedrig"
 #define STR_ERROR "Fehler"
-#define STR_FPS "Zeige FPS"
 #define STR_ENABLED "aktiviert"
 #define STR_DISABLED "deaktiviert"
 
@@ -75,11 +74,11 @@
 #define STR_PLEASE_WAIT "Bitte warten..."
 #define STR_LOAD "Spielstand laden"
 #define STR_LOAD_STATE "Spielstand laden"
-#define STR_SEL_ROM "ROM w\xe4hlen"
+#define STR_SEL_ROM "Spiel w\xe4hlen"
 #define STR_SOUND "Ton"
 #define STR_BRIGHTNESS "Helligkeit"
 #define STR_OPTIONS "Einstellungen"
-#define STR_LAUNCH "Starte Emulation"
+#define STR_LAUNCH "Spiel starten"
 
 #define STR_100 "100 %"
 #define STR_80 "80 %"
@@ -99,8 +98,12 @@
 #define STR_BTN_CBA "C-B-A"
 
 #define STR_BUTTONS "Kn\xf6pfe"
-#define STR_TOGGLE_FPS "FPS-Anzeige umschalten"
 #define STR_TOGGLE_SND_ACC "Genauigkeit umschalten"
+#define STR_TOGGLE_FPS "FPS-Anzeige umschalten"
+#define STR_FPS "Zeige FPS"
+#define STR_TOGGLE_Z80 "Z80 erwzingen (Experte)"
+#define STR_Z80 "Z80 erzwingen"
+
 
 #define STR_LAUNCH_BL "Bootloader starten"
 #endif // EMUMGR_LANG_DE_H

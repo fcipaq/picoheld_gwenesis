@@ -46,19 +46,29 @@ extern "C" {
 #include "src/pplib/sound.h"
 #include "src/pplib/buttons.h"
 #include "src/pplib/fonts.h"
-#include "src/pplib/fonts/f13x16.h"
 #include "src/pplib/fonts/pixelmix_14_16.h"
 
 #include "src/emumgr/emumgr.h"
 
-/* ---- compiler switches ---- */
-#define OVERCLOCK
-
-unsigned short empty_line[320];
-
 #pragma GCC optimize("Ofast")
 
-#define ENABLE_DEBUG_OPTIONS 0
+/* ---- compiler switches ---- */
+// performance
+#define OVERCLOCK   // overclock by a factor of 2
+#define FRAMEDROP   // only any other frame will be rendered
+#define DUALCORE    // use both cores
+#define FPS_LIMITER
+#define FRAME_AVG 6   // # of frames for time averaging
+// customization
+#define SHOW_LOGO
+// debug
+//#define HEADER_ROMFILE
+
+#ifdef SHOW_LOGO
+#include "logo.h"
+#endif
+
+unsigned short empty_line[320];
 
 extern char __flash_binary_end;
 
@@ -68,9 +78,9 @@ uint8_t z80_force_accurate = 1;
 uint8_t snd_accurate = 1;  // 1: generate sound cycle accurate, 0: generate sound frame accurate
 
 volatile int snd_speed_fract = 0;
-volatile int snd_speed_div = 9;
+volatile int snd_speed_div = 4;
 uint32_t snd_speed_fract_tmp = 0;
-uint32_t snd_speed_div_tmp = 9;
+uint32_t snd_speed_div_tmp = 4;
 
 int snd_output_volume = 4;  // 2: old prototype, 4: new prototype
 
@@ -92,54 +102,53 @@ int ym2612_clock;                                                     /* ym2612 
 /* system clock is video clock */
 volatile int system_clock;
 
-unsigned int lines_per_frame = LINES_PER_FRAME_NTSC;  //262; /* NTSC: 262, PAL: 313 */
+unsigned int lines_per_frame = LINES_PER_FRAME_NTSC;  /* NTSC: 262, PAL: 313 */
 unsigned int scan_line;
 
+#ifdef FRAMEDROP
 volatile uint8_t framedrop_cnt = 0;
+#endif
 
 uint8_t enable_debug_display = 0;
-
-//extern unsigned char* M68K_RAM;
-//extern unsigned char* VRAM;
-//extern unsigned char* ZRAM;
 
 /* ---- input ---- */
 /* Configurable keys mapping for A,B and C */
 extern unsigned short button_state[3];
 
-#define NB_OF_COMBO 6
-
 uint32_t longpress_s_timer = 0;
 uint8_t evoke_menu = 0;
 
+#ifdef DUALCORE
 /* ---- multi core sync ---- */
 mutex_t core1_busy;
-
-/* ======================= implementation ======================= */
+#endif
 
 /* --------------------- quirk management -------------------- */
-
-#define QUIRKS_NUM 3
+#define QUIRKS_NUM 4
 
 String rom_names[QUIRKS_NUM] = PROGMEM {
     // Sonic (US/EUR)
-    "\x4f\x53\x49\x4e\x20\x43\x48\x54\x20\x45\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x45\x48\x47\x44\x48\x45\x47\x4f\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20",
+    "SONIC THE               HEDGEHOG                ",
     // Lionking (World)
-    "\x49\x4c\x4e\x4f\x4b\x20\x4e\x49\x20\x47\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20",
+    "LION KING                                       ",
     // Aladdin (Europe)
-    "\x4c\x41\x44\x41\x49\x44\x20\x4e\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20"
-
+    "ALADDIN                                         ",
+    // Sonic 2 (World)
+    "SONIC THE             HEDGEHOG 2                "
 };
+
+/* ======================= implementation ======================= */
 
 void manage_quirks() {
   char rom_name[49];
   memcpy(rom_name, (void*) (ROM_DATA + 0x120), 48);
   rom_name[48] = 0;
+  correct_endianness(rom_name);
 
   // Sonic (US/EUR)
   if (!rom_names[0].compareTo(rom_name)) {
     soll_snd = audio_enabled = 1;
-    z80_force_accurate = 0;
+    z80_force_accurate = 0;  // huge speed improvement
     snd_accurate = 0;
     snd_output_volume = 4;
   }
@@ -147,8 +156,6 @@ void manage_quirks() {
   // Lionking (World)
   if (!rom_names[1].compareTo(rom_name)) {
     soll_snd = audio_enabled = 0;
-    z80_force_accurate = 1;
-    snd_accurate = 1;
     snd_output_volume = 4;
   }
 
@@ -156,9 +163,16 @@ void manage_quirks() {
   if (!rom_names[2].compareTo(rom_name)) {
     soll_snd = audio_enabled = 0;
     z80_force_accurate = 0;
-    snd_accurate = 1;
     snd_output_volume = 4;
   }
+
+  // Sonic 2 (World)
+  if (!rom_names[3].compareTo(rom_name)) {
+    soll_snd = audio_enabled = 0;
+    z80_force_accurate = 0; // huge speed improvement
+    snd_output_volume = 4;
+  }
+
 }
 
 /* ----------------------- emulator ---------------------- */
@@ -169,14 +183,21 @@ void gwenesis_io_get_buttons() {
   uint16_t dpad = checkDPad();
   uint16_t buts = checkButtons();
 
-  button_state[0] = ((dpad & DPAD_LEFT) != 0) << PAD_LEFT | ((dpad & DPAD_RIGHT) != 0) << PAD_RIGHT | ((dpad & DPAD_UP) != 0) << PAD_UP | ((dpad & DPAD_DOWN) != 0) << PAD_DOWN;
+  button_state[0] = ((dpad & DPAD_LEFT) != 0) << PAD_LEFT |
+                    ((dpad & DPAD_RIGHT) != 0) << PAD_RIGHT |
+                    ((dpad & DPAD_UP) != 0) << PAD_UP |
+                    ((dpad & DPAD_DOWN) != 0) << PAD_DOWN;
 
   /* Short press all three buttons to trigger a start button event */
-  if (((buts & BUTTON_1) != 0) && ((buts & BUTTON_2) != 0) && ((buts & BUTTON_3) != 0)) {
+  if (((buts & BUTTON_1) != 0) &&
+      ((buts & BUTTON_2) != 0) &&
+      ((buts & BUTTON_3) != 0)) {
     button_state[0] |= 1 << PAD_S;
   } else {
     button_state[0] |=
-      ((buts & BUTTON_3) != 0) << PAD_A | ((buts & BUTTON_2) != 0) << PAD_B | ((buts & BUTTON_1) != 0) << PAD_C;
+      ((buts & BUTTON_3) != 0) << PAD_A |
+      ((buts & BUTTON_2) != 0) << PAD_B |
+      ((buts & BUTTON_1) != 0) << PAD_C;
   }
 
   button_state[0] = ~button_state[0];
@@ -184,13 +205,8 @@ void gwenesis_io_get_buttons() {
 
 static void gwenesis_system_init() {
   /* init emulator sound system with shared audio buffer */
-
-  //assert(SND_BUFFER_SAMPLES > GWENESIS_AUDIO_BUFFER_LENGTH_PAL);
-
   memset(gwenesis_sn76489_buffer, 0, sizeof(gwenesis_sn76489_buffer));
-  assert(gwenesis_sn76489_buffer);
   memset(gwenesis_ym2612_buffer, 0, sizeof(gwenesis_ym2612_buffer));
-  assert(gwenesis_ym2612_buffer);
 }
 
 void makeSound() {
@@ -236,27 +252,30 @@ void makeSound() {
 }
 
 void core1_mainloop() {
+#ifdef DUALCORE
   while (1) {
     mutex_enter_blocking(&core1_busy);
     mutex_enter_blocking(&core1_busy);
     mutex_exit(&core1_busy);
+#endif
 
     uint32_t system_clock_tmp = system_clock;
 
-    if (!framedrop_cnt) {
+#ifdef FRAMEDROP
+    if (!framedrop_cnt)
+#endif
       /* render scan_line */
       gwenesis_vdp_render_line(scan_line);
-    }
 
     if (audio_enabled && !snd_accurate && system_clock_tmp == 0) {
       z80_run(VDP_CYCLES_PER_LINE * 262);      
       makeSound();
     }
-
+#ifdef DUALCORE
   }  // loop
+#endif
 }
 
-/* Main */
 int main() {
   /* setup hardware */
   initButtons();
@@ -273,63 +292,76 @@ int main() {
   initSound();
   sndSetSpeed(3, 127);
 
-  glcdBacklight(50);
+#ifdef SHOW_LOGO
+  /* show logo */
+  glcdSendBufferWord((uint16_t*) &logo_image_data[2], 320 * 240);
 
-  /* Load ROM  */
-#if 0
+  for (int i = 0; i < 50; i++) {
+    glcdBacklight(i);
+    delay(10);
+  }
+
+  delay(1500);
+
+  for (int i = 0; i < 50; i++) {
+    glcdBacklight(50 - i);
+    delay(10);
+  }
+
+  for (int i = 0; i < 240; i++)
+    glcdSendBufferWord(empty_line, 320);
+
+  delay(100);
+#endif
+
+  glcdBacklight(30);
+
+  /* load ROM  */
+#ifndef HEADER_ROMFILE
   uint32_t rom_addr = (uint32_t) &__flash_binary_end + FLASH_SECTOR_SIZE * 2;
   if (rom_addr % FLASH_SECTOR_SIZE) {
     rom_addr = (rom_addr / FLASH_SECTOR_SIZE + 1) * FLASH_SECTOR_SIZE;
   }
   ROM_METADATA = (const unsigned char*) rom_addr;
-#else
-  ROM_METADATA = (const unsigned char*) 0x100e1000;  // fixed offset: 900 KB application
-#endif
-
   ROM_DATA = ROM_METADATA + FLASH_SECTOR_SIZE;  // header is the size of one erase block (FLASH_SECTOR_SIZE)
+#else
+  ROM_DATA = (const unsigned char*) 0x10100000;  // fixed offset: 1024 KB application
+  ROM_METADATA = ROM_DATA - FLASH_SECTOR_SIZE;  // header is the size of one erase block (FLASH_SECTOR_SIZE)
+#endif
 
   /* setup graphics output */
   unsigned short* screen = glcdGetBuffer(320, 1);
   assert(screen);
 
-//  VRAM = (unsigned char*) malloc(VRAM_MAX_SIZE);
-//  assert(VRAM);
-//  M68K_RAM = (unsigned char*) malloc(MAX_RAM_SIZE);
-//  assert(M68K_RAM);
-//  ZRAM = (unsigned char*) malloc(MAX_Z80_RAM_SIZE);
-//  assert(ZRAM);
-
   gwenesis_vdp_set_buffer(&screen[BUF_HEADER_SIZE]);
-
-  uint8_t framedrop_mode = 2;  // 0 = disabled, 1 = "adaptive" (experimental), 2 = skip every other frame
-  int32_t frame_delay = 0;
 
   extern unsigned char gwenesis_vdp_regs[0x20];
   extern unsigned int gwenesis_vdp_status;
   extern unsigned int screen_width, screen_height;
   static int vert_screen_offset = REG1_PAL ? 0 : (240 - 224);
-  int hint_counter;
-
-  extern int hint_pending;
 
   /* upper black bar */
   for (int h = 0; h < vert_screen_offset / 2; h++)
     glcdSendBufferWord(empty_line, 320);
 
-  //if (!check_rom_valid((uint8_t*) (ROM_DATA)))
+  //if (!check_rom_valid((uint8_t*) (ROM_DATA)))  // TODO
 
   /* emulator init */
+  int hint_counter;
+  extern int hint_pending;
   manage_quirks();
+  emulator_menu();  // launch emulator menu
   load_cartridge();
   gwenesis_system_init();
   power_on();
   reset_emulation();
-  emulator_menu();
 
+#ifdef DUALCORE
   /* Setup 2nd CPU core */
   mutex_init(&core1_busy);
   multicore_reset_core1();
   multicore_launch_core1(core1_mainloop);
+#endif
 
   /* screen overlay */
   glcdBuffer_t* scr_overlay_buf = glcdGetBuffer(30, 20);
@@ -340,13 +372,15 @@ int main() {
   uint16_t cnt = 0;
   t0 = millis();
 
-  /* fps control */
+  /* fps limiter */
+  #ifdef FPS_LIMITER
   uint32_t frame_timer_start = micros();
   uint8_t frame_cnt = 0;
+  #endif
 
+  /* Eumulator loop */
   while (true) {
 
-    /* Eumulator loop */
     hint_counter = gwenesis_vdp_regs[10];
 
     screen_height = REG1_PAL ? 240 : 224;
@@ -369,6 +403,7 @@ int main() {
     if (!audio_enabled && !z80_force_accurate)
       z80_run(VDP_CYCLES_PER_LINE * 262);
 
+    /* frame generation loop */
     while (scan_line < lines_per_frame) {
 
       /* CPUs  */
@@ -376,14 +411,19 @@ int main() {
       if ((audio_enabled && snd_accurate) || (z80_force_accurate))
         z80_run(system_clock + VDP_CYCLES_PER_LINE);
 
+#ifdef DUALCORE
       // as long as the mutex is not blocked, core1 is still busy
       while (mutex_try_enter(&core1_busy, NULL) == true)
         mutex_exit(&core1_busy);
       mutex_exit(&core1_busy);  // When it's finally blocked, release it again
+#else
+      core1_mainloop();
+#endif
 
       /* Video */
-      if (!framedrop_cnt) {
-        /* Video */
+    #ifdef FRAMEDROP
+      if (!framedrop_cnt)
+    #endif
         if (scan_line < SCREEN_HEIGHT) {
           // WA for VPD running one line ahead of CPU
           // TODO: fixme
@@ -394,7 +434,6 @@ int main() {
           } else
             glcdSendBufferWord(empty_line, 320);
         }
-      }
 
       // On these lines, the line counter interrupt is reloaded
       if ((scan_line == 0) || (scan_line > screen_height)) {
@@ -433,13 +472,13 @@ int main() {
       }
 
       system_clock += VDP_CYCLES_PER_LINE;
-    }
+    }  // frame generation loop
 
-    if (framedrop_mode == 2) {
+    #ifdef FRAMEDROP
       framedrop_cnt++;
       if (framedrop_cnt > 1)
         framedrop_cnt = 0;
-    }
+    #endif
 
     /* OSD */
     if (enable_debug_display) {
@@ -454,11 +493,12 @@ int main() {
         t0 = millis();
         cnt = 0;
       }
-    }
+    }  // debug display
+
     // reset m68k cycles to the begin of next frame cycle
     m68k.cycles -= system_clock;
 
-    /* Long press all three buttons to to toggle sound output */
+    /* Long press all three buttons to evoke menu */
     uint16_t buts = checkButtons();
 
     if (((buts & BUTTON_1) != 0) && ((buts & BUTTON_2) != 0) && ((buts & BUTTON_3) != 0)) {
@@ -474,14 +514,13 @@ int main() {
       }
     } else {
       evoke_menu = 0;
-    }
+    }  // evoke menu
 
     if (audio_enabled && snd_accurate)
       makeSound();
 
     // Frame rate limiter - in case we ever might be too fast
-    #if 1
-      #define FRAME_AVG 6
+    #ifdef FPS_LIMITER
       frame_cnt++;
       if (frame_cnt == FRAME_AVG) {
         while (micros() - frame_timer_start < 16667 * FRAME_AVG);  // 60 Hz

@@ -66,6 +66,8 @@ byte  DMA_Enabled = 0;
 #include "lcd_drv/ili9341_init.h"
 #elif defined ILI9488_DRV_H
 #include "lcd_drv/ili9488_init.h"
+#elif defined ST7789_DRV_H
+#include "lcd_drv/st7789_init.h"
 #else
 #error NO LCD DRIVER SPECIFIED
 #endif
@@ -504,7 +506,12 @@ void glcdInitGraphics()
   pinMode(LCD_PIN_RST, OUTPUT);
   pinMode(LCD_PIN_DC, OUTPUT);
 
+  #if defined ST7789_DRV_H
+  pioInit(6, 0);
+  #else
   pioInit(3, 0);
+  #endif
+  
   dmaInit();
 
   lcdControllerInit();  // hardware dependent

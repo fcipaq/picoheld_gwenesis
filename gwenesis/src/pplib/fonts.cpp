@@ -105,7 +105,11 @@ int font_get_string_width(char* str, glcdFont_t* font) {
   uint16_t len = 0;
   
   while (str[h] != 0) {
-    len += getFontCharWidth(str[h], font) + 1;
+	if (str[h] != 0x20)
+      len += getFontCharWidth(str[h], font) + 1;
+	else
+      len += 8;
+
     h++;
   } 
 

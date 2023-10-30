@@ -22,6 +22,7 @@
 #define EMUMGR_H
 
 void emulator_menu();
+void correct_endianness(char* s);
 int check_rom_valid(uint8_t* rom_addr);
 
 #endif //EMUMGR_H

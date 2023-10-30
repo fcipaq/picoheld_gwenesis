@@ -57,6 +57,7 @@ extern "C" {
 extern uint8_t enable_debug_display;
 extern uint8_t snd_accurate;
 extern int snd_output_volume;
+extern int z80_force_accurate;
 extern volatile uint8_t soll_snd;
 extern const unsigned char* ROM_DATA;
 
@@ -107,11 +108,12 @@ const char* main_menu_items[NUM_MAIN_MENU_ITEMS] PROGMEM = { STR_MAIN_TITLE,
                                                              STR_BRIGHTNESS,
                                                              STR_OPTIONS  };
 
-#define NUM_OPT_MENU_ITEMS 5
+#define NUM_OPT_MENU_ITEMS 6
 
 const char* opt_menu_items[NUM_OPT_MENU_ITEMS] PROGMEM = { STR_OPTIONS_MENU,
                                                            STR_BUTTONS,
                                                            STR_TOGGLE_FPS,
+                                                           STR_TOGGLE_Z80,
                                                            STR_LAUNCH_BL,
                                                            //                                                           "WAs",
                                                            STR_GO_BACK };
@@ -186,26 +188,15 @@ const char* message_save[MSG_SAVE_NUM_ROWS] PROGMEM = { STR_SAVING_GAME_STATE,
 const char* message_error[MSG_ERROR_NUM_ROWS] PROGMEM = { STR_ERROR };
 
 
-void remove_ws(char* s) {
+void correct_endianness(char* s) {
   char a;
-  for (int h = 0; h < 32 * 2 + 1; h += 2) {
+
+  for (int h = 0; h < 48; h += 2) {
     a = s[h];
     s[h] = s[h + 1];
     s[h + 1] = a;
   }
 
-  for (char* s2 = s; *s2; ++s2) {
-    if (*s2 != ' ')
-      *s++ = *s2;
-  }
-  
-#if 0
-  // append index to string in case index >= 0
-  if (index >= 0)
-    *s++ = index + 0x30;
-#endif
-
-  *s = 0;
 }
 
 void clearscreen() {
@@ -782,8 +773,8 @@ bool init_sd_card() {
 
 bool savestate(int num) {
 
-  char tochar[100] = SAVESTATE_DIRECTORY;
-  char tmp_char[33];
+  char tochar[100];
+  char tmp_char[50];
   FRESULT fr;
 
   // TODO make this a recursive subdirectory creation
@@ -802,21 +793,26 @@ bool savestate(int num) {
   }
   
   // copy ROM name from header to char array
-  memcpy((void*) (tmp_char), (void*) ((unsigned long) &ROM_DATA[0] + 0x120), 32);
-  tmp_char[32] = 0;
+  memcpy((void*) (tmp_char), (void*) ((unsigned long) &ROM_DATA[0] + 0x120), 48);
+  tmp_char[49] = 0;
 
   // remove spaces
-  remove_ws(tmp_char);
+  correct_endianness(tmp_char);
+  
+  // concat method not working (why?!), so working around manually here...
+  tmp_char[48] = num + 0x30;
+  tmp_char[49] = 0;
 
-  tmp_char[7] = num + 0x30;  // append slot #
-  tmp_char[8] = 0;  // truncate file name to 8
-
+  // make full path
   String file_path_append = tmp_char;
   String file_path = SAVESTATE_DIRECTORY;
   file_path += file_path_append;
 
+  file_path.replace(' ', '_');
+
+  // append index
   file_path.toCharArray(tochar, 100);
-  
+
   FILINFO finfo;
 
   if ((f_stat((TCHAR*) &tochar, &finfo) & FR_NO_FILE) == 0) {
@@ -843,41 +839,29 @@ bool savestate(int num) {
 }
 
 bool loadstate(int num) {
-
-  char tochar[100] = SAVESTATE_DIRECTORY;
-  char tmp_char[33];
+ char tochar[100];
+  char tmp_char[50];
   FRESULT fr;
-
-  // TODO: Due to a bug (in the SD lib?) directory creation randomly fails
-  // TODO make this a recursive subdirectory creation
-  fr = f_mkdir(SAVESTATE_DIRECTORY_1ST_LVL);
-
-  if ((fr != FR_OK) && (fr != FR_EXIST)) {
-    message2(STR_ERROR, STR_WRITING_DIR, 2, 1000);
-    return false;
-  }
-
-  fr = f_mkdir(SAVESTATE_DIRECTORY);
-
-  if ((fr != FR_OK) && (fr != FR_EXIST)) {
-    message2(STR_ERROR, STR_WRITING_DIR, 2, 1000);
-    return false;
-  }
-  
+ 
   // copy ROM name from header to char array
-  memcpy((void*) (tmp_char), (void*) ((unsigned long) &ROM_DATA[0] + 0x120), 32);
-  tmp_char[32] = 0;
+  memcpy((void*) (tmp_char), (void*) ((unsigned long) &ROM_DATA[0] + 0x120), 48);
+  tmp_char[49] = 0;
 
   // remove spaces
-  remove_ws(tmp_char);
+  correct_endianness(tmp_char);
+  
+  // concat method not working (why?!), so working around manually here...
+  tmp_char[48] = num + 0x30;
+  tmp_char[49] = 0;
 
-  tmp_char[7] = num + 0x30;  // append slot #
-  tmp_char[8] = 0;  // truncate file name to 8
-
+  // make full path
   String file_path_append = tmp_char;
   String file_path = SAVESTATE_DIRECTORY;
   file_path += file_path_append;
 
+  file_path.replace(' ', '_');  // not strictly necessary
+
+  // append index
   file_path.toCharArray(tochar, 100);
 
   if (f_open(&savestate_file, (TCHAR*) &tochar, FA_OPEN_EXISTING | FA_READ) != FR_OK) {
@@ -970,7 +954,16 @@ void emulator_menu() {
             message2(STR_FPS, STR_ENABLED, 2, 1000);
           }
         }
-		if (sel2 == 3) {
+        if (sel2 == 3) {
+          z80_force_accurate++;
+          if (z80_force_accurate == 2) {
+            z80_force_accurate = 0;
+            message2(STR_Z80, STR_DISABLED, 2, 1000);
+          } else {
+            message2(STR_Z80, STR_ENABLED, 2, 1000);
+          }
+        }
+		if (sel2 == 4) {
 			uint8_t sel3 = selection_menu(confirm_menu_items_bl, NUM_CONFIRM_MENU_ITEMS_BL, SELECTION_DELAY, 1, 2, 0);
 			if (sel3 == 1) 
                reset_usb_boot(0, 0);

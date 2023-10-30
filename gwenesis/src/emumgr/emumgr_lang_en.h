@@ -29,7 +29,6 @@
 #define STR_HIGH "high"
 #define STR_LOW "low"
 #define STR_ERROR "Error"
-#define STR_FPS "Show FPS"
 #define STR_ENABLED "enabled"
 #define STR_DISABLED "disabled"
 
@@ -92,8 +91,11 @@
 #define STR_BTN_CBA "C-B-A"
 
 #define STR_BUTTONS "Buttons"
-#define STR_TOGGLE_FPS "Toggle FPS"
 #define STR_TOGGLE_SND_ACC "Toggle accuracy"
+#define STR_TOGGLE_FPS "Toggle FPS"
+#define STR_FPS "Show FPS"
+#define STR_TOGGLE_Z80 "Toggle force Z80 (Expert)"
+#define STR_Z80 "Force Z80 on"
 
 #define STR_LAUNCH_BL "Launch bootloader"
 #endif // EMUMGR_LANG_H

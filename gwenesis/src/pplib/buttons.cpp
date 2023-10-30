@@ -28,7 +28,22 @@ uint16_t checkDPad() {
   if (cur_y < min_y)
     min_y = cur_y; 
 
+// compatiblity for some older prototypes wherex
+// the analog stick was mounted with a 90° rotation
+//#define ROT_BUTTONS_90
+#ifdef ROT_BUTTONS_90
+  if (cur_x > 650)
+    value |= DPAD_DOWN;
 
+  if (cur_x < 300)
+    value |= DPAD_UP;
+
+  if (cur_y < 300)
+    value |= DPAD_LEFT;
+
+  if (cur_y > 650)
+    value |= DPAD_RIGHT;
+#else
   if (cur_x > 650)
     value |= DPAD_LEFT;
 
@@ -40,6 +55,7 @@ uint16_t checkDPad() {
 
   if (cur_y > 650)
     value |= DPAD_DOWN;
+#endif
 
   return value;
 }
